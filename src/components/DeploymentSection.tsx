@@ -1,5 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Rocket, Github, Cloud, Zap, Shield, Monitor } from "lucide-react";
@@ -9,14 +11,18 @@ const DeploymentSection = () => {
   const { toast } = useToast();
   const [isDeployingAWS, setIsDeployingAWS] = useState(false);
   const [isDeployingGitHub, setIsDeployingGitHub] = useState(false);
+  const [awsRegion, setAwsRegion] = useState("us-east-1");
+  const [awsInstanceType, setAwsInstanceType] = useState("t2.micro");
+  const [repo, setRepo] = useState("");
+  const [workflow, setWorkflow] = useState("");
 
   const handleAWSDeployment = async () => {
     setIsDeployingAWS(true);
     try {
       const { data, error } = await supabase.functions.invoke('aws-trigger', {
         body: {
-          region: "us-east-1",
-          instanceType: "t2.micro"
+          region: awsRegion,
+          instanceType: awsInstanceType
         }
       });
 
@@ -43,10 +49,13 @@ const DeploymentSection = () => {
   const handleGitHubDeployment = async () => {
     setIsDeployingGitHub(true);
     try {
+      if (!repo || !workflow) {
+        throw new Error('Please provide both repository and workflow file name.');
+      }
       const { data, error } = await supabase.functions.invoke('github-trigger', {
         body: {
-          repo: "yourusername/yourrepo",
-          workflow: "deploy.yml"
+          repo,
+          workflow
         }
       });
 
@@ -54,7 +63,7 @@ const DeploymentSection = () => {
 
       toast({
         title: "✅ GitHub Action Triggered",
-        description: "Deployment workflow started successfully",
+        description: `Workflow ${workflow} dispatched for ${repo}`,
       });
       
       console.log('GitHub deployment response:', data);
@@ -109,17 +118,13 @@ const DeploymentSection = () => {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Region:</span>
-                  <span className="font-medium">us-east-1</span>
+                <div className="space-y-2">
+                  <Label htmlFor="aws-region">Region</Label>
+                  <Input id="aws-region" value={awsRegion} onChange={(e) => setAwsRegion(e.target.value)} placeholder="e.g. us-east-1" />
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Instance Type:</span>
-                  <span className="font-medium">t2.micro</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Auto-Scaling:</span>
-                  <span className="font-medium text-primary">Enabled</span>
+                <div className="space-y-2">
+                  <Label htmlFor="aws-instance">Instance Type</Label>
+                  <Input id="aws-instance" value={awsInstanceType} onChange={(e) => setAwsInstanceType(e.target.value)} placeholder="e.g. t2.micro" />
                 </div>
               </div>
               
@@ -159,17 +164,13 @@ const DeploymentSection = () => {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Repository:</span>
-                  <span className="font-medium">yourusername/yourrepo</span>
+                <div className="space-y-2">
+                  <Label htmlFor="repo">Repository</Label>
+                  <Input id="repo" value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repo" />
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Workflow:</span>
-                  <span className="font-medium">deploy.yml</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Branch:</span>
-                  <span className="font-medium text-accent">main</span>
+                <div className="space-y-2">
+                  <Label htmlFor="workflow">Workflow file</Label>
+                  <Input id="workflow" value={workflow} onChange={(e) => setWorkflow(e.target.value)} placeholder="deploy.yml" />
                 </div>
               </div>
               

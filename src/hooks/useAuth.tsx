@@ -1,15 +1,18 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface User {
   id: string;
-  email: string;
-  name: string;
+  email: string | null;
+  name: string | null;
+  avatarUrl?: string | null;
+  username?: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  signInWithGithub: () => Promise<void>;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -20,36 +23,60 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
-    const savedUser = localStorage.getItem('demo-user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setIsLoading(false);
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.user_metadata?.name || session.user.user_metadata?.full_name || null,
+          avatarUrl: session.user.user_metadata?.avatar_url || null,
+          username: session.user.user_metadata?.user_name || session.user.user_metadata?.preferred_username || null,
+        });
+      } else {
+        setUser(null);
+      }
+      setIsLoading(false);
+    });
+
+    // Initialize from current session
+    supabase.auth.getSession().then(({ data }) => {
+      const session = data.session;
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.user_metadata?.name || session.user.user_metadata?.full_name || null,
+          avatarUrl: session.user.user_metadata?.avatar_url || null,
+          username: session.user.user_metadata?.user_name || session.user.user_metadata?.preferred_username || null,
+        });
+      } else {
+        setUser(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    // Demo login - accept any email/password combo
-    if (email && password) {
-      const demoUser = {
-        id: '1',
-        email,
-        name: email.split('@')[0] || 'Demo User'
-      };
-      setUser(demoUser);
-      localStorage.setItem('demo-user', JSON.stringify(demoUser));
-      return true;
-    }
-    return false;
+  const signInWithGithub = async (): Promise<void> => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        redirectTo: window.location.origin + '/dashboard'
+      }
+    });
+    if (error) throw error;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('demo-user');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, signInWithGithub, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

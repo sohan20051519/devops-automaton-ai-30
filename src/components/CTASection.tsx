@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 import { ArrowRight, Sparkles } from "lucide-react";
 
 const CTASection = () => {
@@ -30,13 +31,12 @@ const CTASection = () => {
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-          <Button variant="hero" size="lg" className="text-lg px-8 py-4 shadow-glow">
-            Start Free Trial - No Credit Card
-            <ArrowRight className="w-5 h-5" />
-          </Button>
-          <Button variant="outline" size="lg" className="text-lg px-8 py-4">
-            Schedule Demo
-          </Button>
+          <Link to="/auth">
+            <Button variant="hero" size="lg" className="text-lg px-8 py-4 shadow-glow">
+              Sign in to Dashboard
+              <ArrowRight className="w-5 h-5" />
+            </Button>
+          </Link>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">

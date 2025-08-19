@@ -1,5 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 import { 
   Brain, 
   FileCode2, 
@@ -50,7 +51,7 @@ const aiFeatures = [
 
 const AIFeaturesSection = () => {
   return (
-    <section className="py-24 px-6 bg-gradient-secondary">
+    <section id="ai" className="py-24 px-6 bg-gradient-secondary">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 border border-accent/20 mb-6">
@@ -92,9 +93,11 @@ const AIFeaturesSection = () => {
         </div>
         
         <div className="text-center">
-          <Button variant="glow" size="lg" className="text-lg px-8 py-4">
-            See AI in Action
-          </Button>
+          <Link to="/auth">
+            <Button variant="glow" size="lg" className="text-lg px-8 py-4">
+              See AI in Action
+            </Button>
+          </Link>
         </div>
       </div>
     </section>

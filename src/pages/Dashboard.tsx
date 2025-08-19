@@ -3,20 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
-import DeploymentSection from '@/components/DeploymentSection';
+import ProjectsSection from '@/components/ProjectsSection';
 import { LogOut, User, Shield, Activity } from 'lucide-react';
 
 const Dashboard = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!user) {
+    if (!isLoading && !user) {
       navigate('/auth');
     }
-  }, [user, navigate]);
+  }, [user, isLoading, navigate]);
 
-  if (!user) {
+  if (isLoading || !user) {
     return null;
   }
 
@@ -45,7 +45,7 @@ const Dashboard = () => {
               <CardContent className="px-4 py-2 flex items-center gap-3">
                 <User className="w-4 h-4 text-primary" />
                 <div>
-                  <p className="text-sm font-medium">{user.name}</p>
+                  <p className="text-sm font-medium">{user.name || 'User'}</p>
                   <p className="text-xs text-muted-foreground">{user.email}</p>
                 </div>
               </CardContent>
@@ -66,66 +66,7 @@ const Dashboard = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-6">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-4">
-            <Activity className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-primary">Live Dashboard</span>
-          </div>
-          
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Welcome back, {user.name}!
-          </h2>
-          
-          <p className="text-xl text-muted-foreground max-w-2xl">
-            Manage your infrastructure, deployments, and DevOps automation from one centralized dashboard.
-          </p>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="border-primary/20 bg-gradient-to-br from-card to-card/50 shadow-card">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Active Deployments
-              </CardTitle>
-              <Activity className="w-4 h-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-primary">2</div>
-              <p className="text-xs text-muted-foreground">AWS & GitHub Actions</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-accent/20 bg-gradient-to-br from-card to-card/50 shadow-card">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Infrastructure Health
-              </CardTitle>
-              <Shield className="w-4 h-4 text-accent" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-accent">98.9%</div>
-              <p className="text-xs text-muted-foreground">Uptime this month</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 bg-gradient-to-br from-card to-card/50 shadow-card">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Cost Savings
-              </CardTitle>
-              <User className="w-4 h-4 text-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">$1,247</div>
-              <p className="text-xs text-muted-foreground">Saved this month</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Deployment Section */}
-        <DeploymentSection />
+        <ProjectsSection />
       </main>
     </div>
   );

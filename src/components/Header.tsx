@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Zap, Menu } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -14,7 +15,7 @@ const Header = () => {
             <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
               <Zap className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold">AutoDevOps.AI</span>
+            <span className="text-xl font-bold">OneOps</span>
           </div>
           
           {/* Navigation */}
@@ -35,12 +36,16 @@ const Header = () => {
           
           {/* CTA Buttons */}
           <div className="hidden md:flex items-center gap-4">
-            <Button variant="ghost">
-              Sign In
-            </Button>
-            <Button variant="hero">
-              Start Free Trial
-            </Button>
+            <Link to="/auth">
+              <Button variant="ghost">
+                Sign In
+              </Button>
+            </Link>
+            <Link to="/auth">
+              <Button variant="hero">
+                Open Dashboard
+              </Button>
+            </Link>
           </div>
           
           {/* Mobile menu button */}
@@ -71,8 +76,12 @@ const Header = () => {
                 Pricing
               </a>
               <div className="flex flex-col gap-2 mt-4">
-                <Button variant="ghost">Sign In</Button>
-                <Button variant="hero">Start Free Trial</Button>
+                <Link to="/auth">
+                  <Button variant="ghost">Sign In</Button>
+                </Link>
+                <Link to="/auth">
+                  <Button variant="hero">Open Dashboard</Button>
+                </Link>
               </div>
             </nav>
           </div>
