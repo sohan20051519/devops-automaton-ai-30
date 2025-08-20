@@ -65,6 +65,12 @@ const Dashboard = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6 sm:space-y-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Button className="w-full" variant="outline" onClick={() => navigate('/deploy')}>Go to Deploy</Button>
+          <Button className="w-full" variant="outline" onClick={() => navigate('/projects')}>Go to Projects</Button>
+          <Button className="w-full" variant="outline" onClick={() => navigate('/usage')}>Go to Usage</Button>
+          <Button className="w-full" variant="outline" onClick={() => navigate('/logs')}>Go to Logs</Button>
+        </div>
         <FullDeploymentSection />
         <ProjectsSection />
         <DeploymentLogs />

@@ -43,7 +43,12 @@ const FullDeploymentSection = () => {
     try {
       console.log('Starting full deployment...');
       
+      // Ensure Authorization header with current user's JWT is sent
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
       const { data, error } = await supabase.functions.invoke('full-deploy', {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
         body: {
           repo: repoUrl,
           repo_type: detectedType,
