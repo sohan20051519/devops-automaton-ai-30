@@ -107,13 +107,13 @@ serve(async (req) => {
       MinCount: 1,
       MaxCount: 1,
       SecurityGroupIds: ['default'],
-      UserData: Buffer.from(`#!/bin/bash
+      UserData: btoa(`#!/bin/bash
         yum update -y
         yum install -y docker
         service docker start
         usermod -a -G docker ec2-user
         docker run -d -p 80:3000 ${imageName}
-      `).toString('base64'),
+      `),
       TagSpecifications: [{
         ResourceType: 'instance',
         Tags: [
