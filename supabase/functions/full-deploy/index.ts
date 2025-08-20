@@ -29,10 +29,37 @@ serve(async (req) => {
     });
 
     // -------- DOWNLOAD REPO --------
+    console.log(`Processing repo: ${repo}, type: ${repo_type}`);
+    
+    // Validate repo URL format
+    if (!repo || !repo_type) {
+      throw new Error('Repo URL and repo type are required');
+    }
+    
     const downloadURL = getDownloadUrl(repo, repo_type);
-    const headers: Record<string, string> = repo_token ? { 'Authorization': `Bearer ${repo_token}` } : {};
+    console.log(`Download URL generated: ${downloadURL}`);
+    
+    const headers: Record<string, string> = repo_token ? { 
+      'Authorization': repo_type === 'github' ? `token ${repo_token}` : `Bearer ${repo_token}`,
+      'User-Agent': 'OneOps-Deploy-Bot'
+    } : { 'User-Agent': 'OneOps-Deploy-Bot' };
+    
+    console.log(`Making request to: ${downloadURL}`);
     const zipResponse = await fetch(downloadURL, { headers });
-    if (!zipResponse.ok) throw new Error(`Repo download failed: ${zipResponse.statusText}`);
+    
+    console.log(`Response status: ${zipResponse.status} ${zipResponse.statusText}`);
+    
+    if (!zipResponse.ok) {
+      let errorMessage = `Repo download failed: ${zipResponse.status} ${zipResponse.statusText}`;
+      
+      if (zipResponse.status === 404) {
+        errorMessage += `. Please check that the repository exists and is accessible. For private repos, ensure you've provided a valid access token.`;
+      } else if (zipResponse.status === 401 || zipResponse.status === 403) {
+        errorMessage += `. Authentication failed. Please check your access token for private repositories.`;
+      }
+      
+      throw new Error(errorMessage);
+    }
 
     const zipArrayBuffer = await zipResponse.arrayBuffer();
     const zipBytes = new Uint8Array(zipArrayBuffer);
@@ -105,10 +132,34 @@ serve(async (req) => {
 });
 
 function getDownloadUrl(repo: string, type: string): string {
-  if (type === 'github') return repo.replace('github.com', 'api.github.com/repos') + '/zipball/main';
-  if (type === 'gitlab') return repo.replace('gitlab.com', 'gitlab.com/api/v4/projects').replace(/\//g, '%2F') + '/repository/archive.zip';
-  if (type === 'bitbucket') return repo + '/get/master.zip';
-  throw new Error('Unsupported repo type');
+  console.log(`Converting repo URL: ${repo}, type: ${type}`);
+  
+  // Remove trailing slash and .git extension if present
+  const cleanRepo = repo.replace(/\/$/, '').replace(/\.git$/, '');
+  
+  if (type === 'github') {
+    // Convert https://github.com/owner/repo to https://api.github.com/repos/owner/repo/zipball/main
+    const apiUrl = cleanRepo.replace('github.com', 'api.github.com/repos') + '/zipball/main';
+    console.log(`GitHub API URL: ${apiUrl}`);
+    return apiUrl;
+  }
+  
+  if (type === 'gitlab') {
+    // Convert https://gitlab.com/owner/repo to https://gitlab.com/api/v4/projects/owner%2Frepo/repository/archive.zip
+    const repoPath = cleanRepo.replace('https://gitlab.com/', '').replace(/\//g, '%2F');
+    const apiUrl = `https://gitlab.com/api/v4/projects/${repoPath}/repository/archive.zip`;
+    console.log(`GitLab API URL: ${apiUrl}`);
+    return apiUrl;
+  }
+  
+  if (type === 'bitbucket') {
+    // Convert https://bitbucket.org/owner/repo to https://bitbucket.org/owner/repo/get/master.zip
+    const apiUrl = cleanRepo + '/get/master.zip';
+    console.log(`Bitbucket API URL: ${apiUrl}`);
+    return apiUrl;
+  }
+  
+  throw new Error(`Unsupported repo type: ${type}`);
 }
 
 async function unzipRepo(zipData: Uint8Array): Promise<string> {
