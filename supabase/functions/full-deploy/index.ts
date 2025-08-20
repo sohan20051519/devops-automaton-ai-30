@@ -21,6 +21,20 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Get authenticated user
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('Authorization header is required');
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authHeader.replace('Bearer ', '')
+    );
+
+    if (authError || !user) {
+      throw new Error('Unauthorized');
+    }
+
     console.log(`Starting deployment for repo: ${repo}, region: ${region}, instance_type: ${instance_type}`);
 
     // Log deployment start
@@ -29,7 +43,8 @@ serve(async (req) => {
       repo,
       region,
       instance_type,
-      status: 'In Progress'
+      status: 'In Progress',
+      user_id: user.id
     });
 
     // Step 1: Download GitHub repo and build Docker image
@@ -113,14 +128,37 @@ serve(async (req) => {
 
     console.log('AWS deployment completed:', deployResult);
 
-    // Step 4: Log successful deployment
+    // Step 4: Log successful deployment and create/update project
+    const repoUrl = repo;
+    
+    // Create or update project record
+    const projectData = {
+      user_id: user.id,
+      name: cleanRepoName,
+      repo_url: repoUrl,
+      region,
+      instance_type,
+      image_url: imageName,
+      deployment_url: `https://${region}.compute.amazonaws.com/app/${cleanRepoName}`,
+      status: 'active',
+      last_deployed_at: new Date().toISOString()
+    };
+
+    await supabase
+      .from('projects')
+      .upsert([projectData], { 
+        onConflict: 'user_id,repo_url',
+        ignoreDuplicates: false 
+      });
+
     await supabase.from('deployment_logs').insert({
       event: 'Full Deployment Completed',
       repo,
       region,
       instance_type,
       status: 'Success',
-      image_url: imageName
+      image_url: imageName,
+      user_id: user.id
     });
 
     return new Response(JSON.stringify({
@@ -147,11 +185,26 @@ serve(async (req) => {
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const supabase = createClient(supabaseUrl, supabaseServiceKey);
       
+      // Try to get user for logging (may fail if auth error)
+      let userId = null;
+      try {
+        const authHeader = req.headers.get('Authorization');
+        if (authHeader) {
+          const { data: { user } } = await supabase.auth.getUser(
+            authHeader.replace('Bearer ', '')
+          );
+          userId = user?.id;
+        }
+      } catch (e) {
+        // Ignore auth errors in error logging
+      }
+      
       await supabase.from('deployment_logs').insert({
         event: 'Deployment Failed',
         repo: req.url || 'unknown',
         status: 'Failed',
-        error_message: error.message
+        error_message: error.message,
+        user_id: userId
       });
     } catch (logError) {
       console.error('Failed to log error:', logError);

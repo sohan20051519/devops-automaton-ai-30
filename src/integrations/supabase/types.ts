@@ -25,6 +25,7 @@ export type Database = {
           region: string | null
           repo: string
           status: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -36,6 +37,7 @@ export type Database = {
           region?: string | null
           repo: string
           status: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -47,8 +49,98 @@ export type Database = {
           region?: string | null
           repo?: string
           status?: string
+          user_id?: string | null
         }
         Relationships: []
+      }
+      projects: {
+        Row: {
+          created_at: string
+          deployment_url: string | null
+          id: string
+          image_url: string | null
+          instance_type: string
+          last_deployed_at: string | null
+          name: string
+          region: string
+          repo_url: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deployment_url?: string | null
+          id?: string
+          image_url?: string | null
+          instance_type: string
+          last_deployed_at?: string | null
+          name: string
+          region: string
+          repo_url: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deployment_url?: string | null
+          id?: string
+          image_url?: string | null
+          instance_type?: string
+          last_deployed_at?: string | null
+          name?: string
+          region?: string
+          repo_url?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      usage_logs: {
+        Row: {
+          cost: number | null
+          cpu_usage: number | null
+          event_type: string
+          id: string
+          memory_usage: number | null
+          network_usage: number | null
+          project_id: string
+          timestamp: string
+          user_id: string
+        }
+        Insert: {
+          cost?: number | null
+          cpu_usage?: number | null
+          event_type: string
+          id?: string
+          memory_usage?: number | null
+          network_usage?: number | null
+          project_id: string
+          timestamp?: string
+          user_id: string
+        }
+        Update: {
+          cost?: number | null
+          cpu_usage?: number | null
+          event_type?: string
+          id?: string
+          memory_usage?: number | null
+          network_usage?: number | null
+          project_id?: string
+          timestamp?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usage_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

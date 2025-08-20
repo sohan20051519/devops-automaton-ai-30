@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuth } from '@/hooks/useAuth';
 import FullDeploymentSection from '@/components/FullDeploymentSection';
 import DeploymentLogs from '@/components/DeploymentLogs';
+import ProjectsSection from '@/components/ProjectsSection';
 import { LogOut, User, Shield, Activity } from 'lucide-react';
 
 const Dashboard = () => {
@@ -70,6 +71,7 @@ const Dashboard = () => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6 sm:space-y-8">
         <FullDeploymentSection />
+        <ProjectsSection />
         <DeploymentLogs />
       </main>
     </div>
