@@ -88,18 +88,34 @@ serve(async (req) => {
     
     // Initialize AWS signer
     const signer = new AWSSignerV4(region);
+    const accountId = await getAccountId(signer, awsAccessKey, awsSecretKey, region);
     
-    // Create ECS cluster if it doesn't exist
-    const clusterName = `oneops-cluster-${user.id.slice(0, 8)}`;
-    await createECSCluster(signer, awsAccessKey, awsSecretKey, region, clusterName);
+    // Get or create reusable cluster
+    const clusterName = `oneops-prod`;
+    await ensureECSCluster(signer, awsAccessKey, awsSecretKey, region, clusterName);
     
-    // Create task definition
-    const taskDefArn = await createTaskDefinition(signer, awsAccessKey, awsSecretKey, region, imageName, repoNameFromUrl(repo));
+    // Get networking resources
+    const { subnets, securityGroupId, vpcId } = await getNetworkingResources(signer, awsAccessKey, awsSecretKey, region);
     
-    // Run task on Fargate
-    const deployResult = await runFargateTask(signer, awsAccessKey, awsSecretKey, region, clusterName, taskDefArn);
+    // Create ALB for stable URL
+    const { albArn, targetGroupArn, albDnsName } = await createApplicationLoadBalancer(
+      signer, awsAccessKey, awsSecretKey, region, vpcId, subnets, securityGroupId, repoNameFromUrl(repo)
+    );
     
-    console.log(`AWS ECS deployment successful. Task: ${deployResult.taskArn}, URL: ${deployResult.deployment_url}`);
+    // Register task definition
+    const taskDefArn = await registerTaskDefinition(
+      signer, awsAccessKey, awsSecretKey, region, accountId, imageName, repoNameFromUrl(repo)
+    );
+    
+    // Create ECS service with ALB
+    const serviceName = `oneops-${repoNameFromUrl(repo)}`;
+    const serviceArn = await createECSService(
+      signer, awsAccessKey, awsSecretKey, region, clusterName, serviceName, 
+      taskDefArn, subnets, securityGroupId, targetGroupArn
+    );
+    
+    const deploymentUrl = `http://${albDnsName}`;
+    console.log(`AWS ECS deployment successful. Service: ${serviceArn}, URL: ${deploymentUrl}`);
 
     await supabase.from('projects').upsert([{ 
       user_id: user.id, 
@@ -108,9 +124,12 @@ serve(async (req) => {
       region, 
       instance_type, 
       image_url: imageName, 
-      deployment_url: deployResult.deployment_url, 
+      deployment_url: deploymentUrl, 
       status: 'active', 
-      last_deployed_at: new Date().toISOString() 
+      last_deployed_at: new Date().toISOString(),
+      service_arn: serviceArn,
+      cluster_name: clusterName,
+      alb_dns_name: albDnsName
     }], { onConflict: 'user_id,repo_url', ignoreDuplicates: false });
 
     await supabase.from('deployment_logs').insert({ 
@@ -126,8 +145,14 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       image: imageName, 
-      deployment_url: deployResult.deployment_url,
-      instance_details: deployResult 
+      deployment_url: deploymentUrl,
+      service_details: {
+        serviceArn,
+        clusterName,
+        albDnsName,
+        targetGroupArn,
+        status: 'creating'
+      }
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   
   } catch (error) {
@@ -364,11 +389,56 @@ function repoNameFromUrl(repoUrl: string): string {
 
 // -------- AWS ECS FUNCTIONS --------
 
-async function createECSCluster(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string, clusterName: string): Promise<void> {
+async function ensureECSCluster(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string, clusterName: string): Promise<void> {
+  // First check if cluster exists
+  const describeEndpoint = `https://ecs.${region}.amazonaws.com/`;
+  
+  const describeBody = JSON.stringify({
+    clusters: [clusterName]
+  });
+
+  const describeRequest = new Request(describeEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-amz-json-1.1',
+      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.DescribeClusters',
+    },
+    body: describeBody,
+  });
+
+  const { headers: describeHeaders } = await signer.sign('ecs', describeRequest, {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+  });
+
+  const describeResponse = await fetch(describeEndpoint, {
+    method: 'POST',
+    headers: {
+      ...describeHeaders,
+      'Content-Type': 'application/x-amz-json-1.1',
+      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.DescribeClusters',
+    },
+    body: describeBody,
+  });
+
+  if (describeResponse.ok) {
+    const result = await describeResponse.json();
+    if (result.clusters && result.clusters.length > 0 && result.clusters[0].status === 'ACTIVE') {
+      console.log(`ECS cluster ${clusterName} already exists and is active`);
+      return;
+    }
+  }
+
+  // Create cluster if it doesn't exist
   const endpoint = `https://ecs.${region}.amazonaws.com/`;
   
   const body = JSON.stringify({
     clusterName: clusterName,
+    capacityProviders: ['FARGATE'],
+    defaultCapacityProviderStrategy: [{
+      capacityProvider: 'FARGATE',
+      weight: 1
+    }],
     tags: [
       { key: 'Project', value: 'OneOps' },
       { key: 'Environment', value: 'Production' }
@@ -401,17 +471,265 @@ async function createECSCluster(signer: AWSSignerV4, accessKey: string, secretKe
 
   if (!response.ok) {
     const error = await response.text();
-    // Cluster might already exist, which is okay
-    if (!error.includes('ClusterAlreadyExistsException')) {
-      throw new Error(`Failed to create ECS cluster: ${response.status} ${error}`);
-    }
+    throw new Error(`Failed to create ECS cluster: ${response.status} ${error}`);
   }
 
-  console.log(`ECS cluster ${clusterName} ready`);
+  console.log(`ECS cluster ${clusterName} created successfully`);
 }
 
-async function createTaskDefinition(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string, imageName: string, appName: string): Promise<string> {
+async function getNetworkingResources(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string): Promise<{
+  subnets: string[],
+  securityGroupId: string,
+  vpcId: string
+}> {
+  // Get default VPC
+  const ec2Endpoint = `https://ec2.${region}.amazonaws.com/`;
+  
+  // Describe VPCs
+  const vpcBody = 'Action=DescribeVpcs&Filter.1.Name=is-default&Filter.1.Value.1=true&Version=2016-11-15';
+  
+  const vpcRequest = new Request(ec2Endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: vpcBody,
+  });
+
+  const { headers: vpcHeaders } = await signer.sign('ec2', vpcRequest, {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+  });
+
+  const vpcResponse = await fetch(ec2Endpoint, {
+    method: 'POST',
+    headers: {
+      ...vpcHeaders,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: vpcBody,
+  });
+
+  let vpcId = '';
+  if (vpcResponse.ok) {
+    const vpcText = await vpcResponse.text();
+    const vpcMatch = vpcText.match(/<vpcId>(vpc-[a-zA-Z0-9]+)<\/vpcId>/);
+    vpcId = vpcMatch ? vpcMatch[1] : '';
+  }
+
+  // Get public subnets in different AZs
+  const subnetBody = `Action=DescribeSubnets&Filter.1.Name=vpc-id&Filter.1.Value.1=${vpcId}&Filter.2.Name=default-for-az&Filter.2.Value.1=true&Version=2016-11-15`;
+  
+  const subnetRequest = new Request(ec2Endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: subnetBody,
+  });
+
+  const { headers: subnetHeaders } = await signer.sign('ec2', subnetRequest, {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+  });
+
+  const subnetResponse = await fetch(ec2Endpoint, {
+    method: 'POST',
+    headers: {
+      ...subnetHeaders,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: subnetBody,
+  });
+
+  let subnets: string[] = [];
+  if (subnetResponse.ok) {
+    const subnetText = await subnetResponse.text();
+    const subnetMatches = subnetText.match(/<subnetId>(subnet-[a-zA-Z0-9]+)<\/subnetId>/g);
+    subnets = subnetMatches ? subnetMatches.map(match => match.replace(/<\/?subnetId>/g, '')) : [];
+  }
+
+  // Get default security group
+  const sgBody = `Action=DescribeSecurityGroups&Filter.1.Name=vpc-id&Filter.1.Value.1=${vpcId}&Filter.2.Name=group-name&Filter.2.Value.1=default&Version=2016-11-15`;
+  
+  const sgRequest = new Request(ec2Endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: sgBody,
+  });
+
+  const { headers: sgHeaders } = await signer.sign('ec2', sgRequest, {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+  });
+
+  const sgResponse = await fetch(ec2Endpoint, {
+    method: 'POST',
+    headers: {
+      ...sgHeaders,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: sgBody,
+  });
+
+  let securityGroupId = '';
+  if (sgResponse.ok) {
+    const sgText = await sgResponse.text();
+    const sgMatch = sgText.match(/<groupId>(sg-[a-zA-Z0-9]+)<\/groupId>/);
+    securityGroupId = sgMatch ? sgMatch[1] : '';
+  }
+
+  console.log(`Found networking resources - VPC: ${vpcId}, Subnets: ${subnets.join(',')}, SG: ${securityGroupId}`);
+  
+  return {
+    subnets: subnets.slice(0, 2), // Use first 2 subnets for ALB
+    securityGroupId,
+    vpcId
+  };
+}
+
+async function createApplicationLoadBalancer(
+  signer: AWSSignerV4, 
+  accessKey: string, 
+  secretKey: string, 
+  region: string, 
+  vpcId: string, 
+  subnets: string[], 
+  securityGroupId: string, 
+  appName: string
+): Promise<{
+  albArn: string,
+  targetGroupArn: string,
+  albDnsName: string
+}> {
+  const elbEndpoint = `https://elasticloadbalancing.${region}.amazonaws.com/`;
+  
+  // Create target group first
+  const tgBody = `Action=CreateTargetGroup&Name=oneops-${appName}-tg&Protocol=HTTP&Port=3000&VpcId=${vpcId}&TargetType=ip&HealthCheckPath=/&HealthCheckProtocol=HTTP&Version=2015-12-01`;
+  
+  const tgRequest = new Request(elbEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: tgBody,
+  });
+
+  const { headers: tgHeaders } = await signer.sign('elasticloadbalancing', tgRequest, {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+  });
+
+  const tgResponse = await fetch(elbEndpoint, {
+    method: 'POST',
+    headers: {
+      ...tgHeaders,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: tgBody,
+  });
+
+  let targetGroupArn = '';
+  if (tgResponse.ok) {
+    const tgText = await tgResponse.text();
+    const tgMatch = tgText.match(/<TargetGroupArn>([^<]+)<\/TargetGroupArn>/);
+    targetGroupArn = tgMatch ? tgMatch[1] : '';
+  } else {
+    throw new Error(`Failed to create target group: ${await tgResponse.text()}`);
+  }
+
+  // Create Application Load Balancer
+  const subnetParams = subnets.map((subnet, index) => `Subnets.member.${index + 1}=${subnet}`).join('&');
+  
+  const albBody = `Action=CreateLoadBalancer&Name=oneops-${appName}-alb&${subnetParams}&SecurityGroups.member.1=${securityGroupId}&Scheme=internet-facing&Type=application&Version=2015-12-01`;
+  
+  const albRequest = new Request(elbEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: albBody,
+  });
+
+  const { headers: albHeaders } = await signer.sign('elasticloadbalancing', albRequest, {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+  });
+
+  const albResponse = await fetch(elbEndpoint, {
+    method: 'POST',
+    headers: {
+      ...albHeaders,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: albBody,
+  });
+
+  let albArn = '';
+  let albDnsName = '';
+  if (albResponse.ok) {
+    const albText = await albResponse.text();
+    const albArnMatch = albText.match(/<LoadBalancerArn>([^<]+)<\/LoadBalancerArn>/);
+    const albDnsMatch = albText.match(/<DNSName>([^<]+)<\/DNSName>/);
+    albArn = albArnMatch ? albArnMatch[1] : '';
+    albDnsName = albDnsMatch ? albDnsMatch[1] : '';
+  } else {
+    throw new Error(`Failed to create ALB: ${await albResponse.text()}`);
+  }
+
+  // Create listener
+  const listenerBody = `Action=CreateListener&LoadBalancerArn=${encodeURIComponent(albArn)}&Protocol=HTTP&Port=80&DefaultActions.member.1.Type=forward&DefaultActions.member.1.TargetGroupArn=${encodeURIComponent(targetGroupArn)}&Version=2015-12-01`;
+  
+  const listenerRequest = new Request(elbEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: listenerBody,
+  });
+
+  const { headers: listenerHeaders } = await signer.sign('elasticloadbalancing', listenerRequest, {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+  });
+
+  const listenerResponse = await fetch(elbEndpoint, {
+    method: 'POST',
+    headers: {
+      ...listenerHeaders,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: listenerBody,
+  });
+
+  if (!listenerResponse.ok) {
+    throw new Error(`Failed to create listener: ${await listenerResponse.text()}`);
+  }
+
+  console.log(`Created ALB: ${albDnsName} with target group: ${targetGroupArn}`);
+  
+  return {
+    albArn,
+    targetGroupArn,
+    albDnsName
+  };
+}
+
+async function registerTaskDefinition(
+  signer: AWSSignerV4, 
+  accessKey: string, 
+  secretKey: string, 
+  region: string, 
+  accountId: string, 
+  imageName: string, 
+  appName: string
+): Promise<string> {
   const endpoint = `https://ecs.${region}.amazonaws.com/`;
+  
+  // Create CloudWatch log group first
+  await createLogGroup(signer, accessKey, secretKey, region, `/oneops/apps/${appName}`);
   
   const taskDefinition = {
     family: `oneops-${appName}`,
@@ -419,7 +737,8 @@ async function createTaskDefinition(signer: AWSSignerV4, accessKey: string, secr
     requiresCompatibilities: ['FARGATE'],
     cpu: '256',
     memory: '512',
-    executionRoleArn: `arn:aws:iam::${await getAccountId(signer, accessKey, secretKey, region)}:role/ecsTaskExecutionRole`,
+    executionRoleArn: `arn:aws:iam::${accountId}:role/ecsTaskExecutionRole`,
+    taskRoleArn: `arn:aws:iam::${accountId}:role/ecsTaskRole`,
     containerDefinitions: [
       {
         name: appName,
@@ -434,10 +753,18 @@ async function createTaskDefinition(signer: AWSSignerV4, accessKey: string, secr
         logConfiguration: {
           logDriver: 'awslogs',
           options: {
-            'awslogs-group': `/ecs/oneops-${appName}`,
+            'awslogs-group': `/oneops/apps/${appName}`,
             'awslogs-region': region,
-            'awslogs-stream-prefix': 'ecs'
+            'awslogs-stream-prefix': 'ecs',
+            'awslogs-create-group': 'true'
           }
+        },
+        healthCheck: {
+          command: ['CMD-SHELL', 'curl -f http://localhost:3000/ || exit 1'],
+          interval: 30,
+          timeout: 5,
+          retries: 3,
+          startPeriod: 60
         }
       }
     ]
@@ -471,37 +798,68 @@ async function createTaskDefinition(signer: AWSSignerV4, accessKey: string, secr
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Failed to create task definition: ${response.status} ${error}`);
+    throw new Error(`Failed to register task definition: ${response.status} ${error}`);
   }
 
   const result = await response.json();
-  console.log(`Task definition created: ${result.taskDefinition.taskDefinitionArn}`);
+  console.log(`Task definition registered: ${result.taskDefinition.taskDefinitionArn}`);
   return result.taskDefinition.taskDefinitionArn;
 }
 
-async function runFargateTask(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string, clusterName: string, taskDefArn: string): Promise<any> {
+async function createECSService(
+  signer: AWSSignerV4,
+  accessKey: string,
+  secretKey: string,
+  region: string,
+  clusterName: string,
+  serviceName: string,
+  taskDefArn: string,
+  subnets: string[],
+  securityGroupId: string,
+  targetGroupArn: string
+): Promise<string> {
   const endpoint = `https://ecs.${region}.amazonaws.com/`;
   
-  const runTaskRequest = {
+  const serviceRequest = {
     cluster: clusterName,
+    serviceName: serviceName,
     taskDefinition: taskDefArn,
+    desiredCount: 1,
     launchType: 'FARGATE',
     networkConfiguration: {
       awsvpcConfiguration: {
-        subnets: await getDefaultSubnets(signer, accessKey, secretKey, region),
-        securityGroups: [await getDefaultSecurityGroup(signer, accessKey, secretKey, region)],
+        subnets: subnets,
+        securityGroups: [securityGroupId],
         assignPublicIp: 'ENABLED'
       }
-    }
+    },
+    loadBalancers: [{
+      targetGroupArn: targetGroupArn,
+      containerName: serviceName.replace('oneops-', ''),
+      containerPort: 3000
+    }],
+    deploymentConfiguration: {
+      maximumPercent: 200,
+      minimumHealthyPercent: 50,
+      deploymentCircuitBreaker: {
+        enable: true,
+        rollback: true
+      }
+    },
+    enableExecuteCommand: true,
+    tags: [
+      { key: 'Project', value: 'OneOps' },
+      { key: 'Environment', value: 'Production' }
+    ]
   };
 
-  const body = JSON.stringify(runTaskRequest);
+  const body = JSON.stringify(serviceRequest);
 
   const request = new Request(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.RunTask',
+      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.CreateService',
     },
     body: body,
   });
@@ -516,31 +874,60 @@ async function runFargateTask(signer: AWSSignerV4, accessKey: string, secretKey:
     headers: {
       ...headers,
       'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.RunTask',
+      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.CreateService',
     },
     body: body,
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Failed to run Fargate task: ${response.status} ${error}`);
+    throw new Error(`Failed to create ECS service: ${response.status} ${error}`);
   }
 
   const result = await response.json();
-  const taskArn = result.tasks[0].taskArn;
+  console.log(`ECS service created: ${result.service.serviceArn}`);
+  return result.service.serviceArn;
+}
+
+async function createLogGroup(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string, logGroupName: string): Promise<void> {
+  const endpoint = `https://logs.${region}.amazonaws.com/`;
   
-  // Wait for task to get a public IP
-  await new Promise(resolve => setTimeout(resolve, 10000));
-  
-  // Get task details to find the public IP
-  const taskIP = await getTaskPublicIP(signer, accessKey, secretKey, region, clusterName, taskArn);
-  
-  return {
-    taskArn: taskArn,
-    deployment_url: `http://${taskIP}:3000`,
-    public_ip: taskIP,
-    state: 'running'
-  };
+  const body = JSON.stringify({
+    logGroupName: logGroupName,
+    retentionInDays: 7
+  });
+
+  const request = new Request(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-amz-json-1.1',
+      'X-Amz-Target': 'Logs_20140328.CreateLogGroup',
+    },
+    body: body,
+  });
+
+  const { headers } = await signer.sign('logs', request, {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+  });
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Content-Type': 'application/x-amz-json-1.1',
+      'X-Amz-Target': 'Logs_20140328.CreateLogGroup',
+    },
+    body: body,
+  });
+
+  // Log group might already exist, which is fine
+  if (!response.ok) {
+    const error = await response.text();
+    if (!error.includes('ResourceAlreadyExistsException')) {
+      console.warn(`Failed to create log group: ${error}`);
+    }
+  }
 }
 
 async function getAccountId(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string): Promise<string> {
@@ -576,70 +963,4 @@ async function getAccountId(signer: AWSSignerV4, accessKey: string, secretKey: s
   const text = await response.text();
   const match = text.match(/<Account>(\d+)<\/Account>/);
   return match ? match[1] : 'unknown';
-}
-
-async function getDefaultSubnets(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string): Promise<string[]> {
-  // For simplicity, return some common subnet IDs - in production, this should query EC2
-  // These are example subnets that exist in most AWS regions
-  return [
-    `subnet-12345678`, // This would need to be actual subnet IDs
-    `subnet-87654321`
-  ];
-}
-
-async function getDefaultSecurityGroup(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string): Promise<string> {
-  // Return the default security group ID - in production, this should query EC2
-  return 'sg-12345678'; // This would need to be actual security group ID
-}
-
-async function getTaskPublicIP(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string, clusterName: string, taskArn: string): Promise<string> {
-  const endpoint = `https://ecs.${region}.amazonaws.com/`;
-  
-  const body = JSON.stringify({
-    cluster: clusterName,
-    tasks: [taskArn]
-  });
-
-  const request = new Request(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.DescribeTasks',
-    },
-    body: body,
-  });
-
-  const { headers } = await signer.sign('ecs', request, {
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey,
-  });
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      ...headers,
-      'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.DescribeTasks',
-    },
-    body: body,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to describe task: ${response.status}`);
-  }
-
-  const result = await response.json();
-  const task = result.tasks[0];
-  
-  // Get the ENI ID from the task
-  const eniId = task.attachments[0]?.details?.find((detail: any) => detail.name === 'networkInterfaceId')?.value;
-  
-  if (!eniId) {
-    // Fallback to a mock IP for testing
-    return '1.2.3.4';
-  }
-
-  // Query EC2 to get the public IP of the ENI
-  // For simplicity, returning a mock IP - in production, this would query EC2
-  return '1.2.3.4';
 }
