@@ -32,7 +32,7 @@ const Dashboard = () => {
       {/* Header */}
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
                 <Shield className="w-6 h-6 text-primary" />
@@ -43,27 +43,19 @@ const Dashboard = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3">
-              <Card className="bg-card/50 border-border/50">
-                <CardContent className="px-2 py-1 sm:px-4 sm:py-2 flex items-center gap-2 sm:gap-3">
-                  <User className="w-3 h-3 sm:w-4 sm:h-4 text-primary" />
-                  <div className="min-w-0 hidden sm:block">
-                    <p className="text-sm font-medium">{user.name || 'User'}</p>
-                    <p className="text-xs text-muted-foreground">{user.email}</p>
-                  </div>
-                  <div className="min-w-0 block sm:hidden">
-                    <p className="text-xs font-medium truncate max-w-[80px]">{user.name || user.email?.split('@')[0] || 'User'}</p>
-                  </div>
-                </CardContent>
-              </Card>
-
+            <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center gap-2 text-sm">
+                <User className="w-4 h-4 text-primary" />
+                <span className="font-medium hidden sm:inline">{user.name || user.email?.split('@')[0] || 'User'}</span>
+                <span className="font-medium sm:hidden">{user.name?.split(' ')[0] || user.email?.split('@')[0] || 'User'}</span>
+              </div>
               <Button
                 onClick={handleLogout}
                 variant="outline"
                 size="sm"
-                className="gap-1 sm:gap-2 px-2 sm:px-3"
+                className="gap-1 px-2 sm:px-3"
               >
-                <LogOut className="w-3 h-3 sm:w-4 sm:h-4" />
+                <LogOut className="w-4 h-4" />
                 <span className="hidden sm:inline">Logout</span>
               </Button>
             </div>
