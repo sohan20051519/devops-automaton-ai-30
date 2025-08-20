@@ -71,13 +71,13 @@ const FullDeploymentSection = () => {
   };
 
   return (
-    <section className="py-20 bg-gradient-to-br from-background via-background/95 to-primary/5">
-      <div className="max-w-4xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold mb-4 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+    <section className="py-10 sm:py-20 bg-gradient-to-br from-background via-background/95 to-primary/5">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6">
+        <div className="text-center mb-8 sm:mb-12">
+          <h2 className="text-2xl sm:text-3xl font-bold mb-4 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
             One-Click DevOps Deployment
           </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mx-auto">
             Deploy any GitHub repo to AWS in seconds. We handle the Docker build, push, and infrastructure automatically.
           </p>
         </div>

@@ -132,14 +132,14 @@ const DeploymentLogs = () => {
                   </div>
                   
                   <div className="text-sm text-muted-foreground space-y-1">
-                    <div className="flex items-center gap-4">
-                      <span><strong>Repo:</strong> {getRepoName(log.repo)}</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+                      <span className="break-all"><strong>Repo:</strong> {getRepoName(log.repo)}</span>
                       {log.region && <span><strong>Region:</strong> {log.region}</span>}
                       {log.instance_type && <span><strong>Type:</strong> {log.instance_type}</span>}
                     </div>
                     
                     {log.image_url && (
-                      <div><strong>Image:</strong> {log.image_url}</div>
+                      <div className="break-all"><strong>Image:</strong> {log.image_url}</div>
                     )}
                     
                     {log.error_message && (
