@@ -79,33 +79,86 @@ serve(async (req) => {
     const awsApiUrl = Deno.env.get('AWS_API_URL')!;
     const awsKey = Deno.env.get('AWS_KEY')!;
 
+    if (!awsApiUrl || !awsKey) {
+      throw new Error('AWS API URL and AWS API Key must be configured');
+    }
+
     console.log(`Deploying to AWS: ${awsApiUrl}`);
+    
+    const deployPayload = {
+      image: imageName, 
+      region, 
+      instance_type, 
+      app_name: repoNameFromUrl(repo), 
+      timestamp: new Date().toISOString(),
+      user_id: user.id
+    };
+    
+    console.log('AWS Deploy payload:', JSON.stringify(deployPayload, null, 2));
+    
     const deployRes = await fetch(awsApiUrl, {
       method: 'POST',
-      headers: { 'x-api-key': awsKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        image: imageName, 
-        region, 
-        instance_type, 
-        app_name: repoNameFromUrl(repo), 
-        timestamp: new Date().toISOString(),
-        user_id: user.id
-      })
+      headers: { 
+        'Authorization': `Bearer ${awsKey}`,
+        'x-api-key': awsKey,
+        'Content-Type': 'application/json',
+        'User-Agent': 'OneOps-Deploy-Service/1.0'
+      },
+      body: JSON.stringify(deployPayload)
     });
 
     console.log(`AWS API Response: ${deployRes.status} ${deployRes.statusText}`);
     
-    if (!deployRes.ok) {
-      const errorText = await deployRes.text();
-      throw new Error(`AWS deployment failed: ${deployRes.status} ${deployRes.statusText} - ${errorText}`);
+    let deployResult;
+    let responseText;
+    
+    try {
+      responseText = await deployRes.text();
+      console.log('AWS API Raw Response:', responseText);
+      
+      if (responseText) {
+        deployResult = JSON.parse(responseText);
+      } else {
+        deployResult = { success: false, error: 'Empty response from AWS API' };
+      }
+    } catch (parseError) {
+      console.error('Failed to parse AWS response:', parseError);
+      deployResult = { 
+        success: false, 
+        error: `Invalid JSON response: ${responseText}`,
+        raw_response: responseText 
+      };
     }
-
-    const deployResult = await deployRes.json();
+    
+    if (!deployRes.ok) {
+      let errorMessage = `AWS deployment failed: ${deployRes.status} ${deployRes.statusText}`;
+      
+      if (deployRes.status === 403) {
+        errorMessage += '. Check your AWS API key configuration.';
+      } else if (deployRes.status === 401) {
+        errorMessage += '. AWS API authentication failed.';
+      } else if (deployRes.status === 404) {
+        errorMessage += '. AWS API endpoint not found.';
+      }
+      
+      if (deployResult && deployResult.message) {
+        errorMessage += ` Details: ${deployResult.message}`;
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
     console.log('AWS deployment result:', deployResult);
     
-    // Validate deployment result
-    if (!deployResult.success && !deployResult.instance_id && !deployResult.deployment_url) {
-      throw new Error(`AWS deployment validation failed: ${JSON.stringify(deployResult)}`);
+    // More flexible validation - AWS might return different response formats
+    const isSuccess = deployResult?.success === true || 
+                     deployResult?.Status === 'Success' || 
+                     deployResult?.status === 'success' ||
+                     (deployResult?.instance_id && deployResult.instance_id !== '') ||
+                     (deployResult?.deployment_url && deployResult.deployment_url !== '');
+    
+    if (!isSuccess) {
+      throw new Error(`AWS deployment validation failed. Response: ${JSON.stringify(deployResult)}`);
     }
     
     // Use the actual deployment URL from AWS response, fallback to generated URL
