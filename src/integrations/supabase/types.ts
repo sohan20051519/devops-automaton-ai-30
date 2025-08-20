@@ -55,6 +55,8 @@ export type Database = {
       }
       projects: {
         Row: {
+          alb_dns_name: string | null
+          cluster_name: string | null
           created_at: string
           deployment_url: string | null
           id: string
@@ -64,11 +66,14 @@ export type Database = {
           name: string
           region: string
           repo_url: string
+          service_arn: string | null
           status: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          alb_dns_name?: string | null
+          cluster_name?: string | null
           created_at?: string
           deployment_url?: string | null
           id?: string
@@ -78,11 +83,14 @@ export type Database = {
           name: string
           region: string
           repo_url: string
+          service_arn?: string | null
           status?: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          alb_dns_name?: string | null
+          cluster_name?: string | null
           created_at?: string
           deployment_url?: string | null
           id?: string
@@ -92,6 +100,7 @@ export type Database = {
           name?: string
           region?: string
           repo_url?: string
+          service_arn?: string | null
           status?: string
           updated_at?: string
           user_id?: string
