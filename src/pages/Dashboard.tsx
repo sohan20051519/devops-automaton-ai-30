@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
-import ProjectsSection from '@/components/ProjectsSection';
+import FullDeploymentSection from '@/components/FullDeploymentSection';
+import DeploymentLogs from '@/components/DeploymentLogs';
 import { LogOut, User, Shield, Activity } from 'lucide-react';
 
 const Dashboard = () => {
@@ -65,8 +66,9 @@ const Dashboard = () => {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-6">
-        <ProjectsSection />
+      <main className="max-w-7xl mx-auto p-6 space-y-8">
+        <FullDeploymentSection />
+        <DeploymentLogs />
       </main>
     </div>
   );

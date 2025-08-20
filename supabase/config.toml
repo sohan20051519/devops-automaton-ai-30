@@ -1,1 +1,10 @@
 project_id = "otfrxwmjefcgooqwxdwe"
+
+[functions.aws-trigger]
+verify_jwt = false
+
+[functions.github-trigger]
+verify_jwt = false
+
+[functions.full-deploy]
+verify_jwt = false

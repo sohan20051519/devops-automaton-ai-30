@@ -14,7 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      deployment_logs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          event: string
+          id: string
+          image_url: string | null
+          instance_type: string | null
+          region: string | null
+          repo: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          event: string
+          id?: string
+          image_url?: string | null
+          instance_type?: string | null
+          region?: string | null
+          repo: string
+          status: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          event?: string
+          id?: string
+          image_url?: string | null
+          instance_type?: string | null
+          region?: string | null
+          repo?: string
+          status?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
