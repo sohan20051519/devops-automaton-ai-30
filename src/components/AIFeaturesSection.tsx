@@ -60,14 +60,14 @@ const AIFeaturesSection = () => {
           </div>
           
           <h2 className="text-4xl md:text-5xl font-bold mb-6">
-            Features That Could Replace
+            Next-Generation DevOps
             <br />
             <span className="bg-gradient-primary bg-clip-text text-transparent">
-              DevOps Jobs
+              AI Features
             </span>
           </h2>
           <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-            AI-powered capabilities that go beyond automation to true autonomous DevOps operations.
+            Advanced AI capabilities that enhance and accelerate your DevOps workflows for maximum efficiency.
           </p>
         </div>
         

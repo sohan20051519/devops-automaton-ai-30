@@ -43,13 +43,16 @@ const Dashboard = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <Card className="bg-card/50 border-border/50">
-                <CardContent className="px-4 py-2 flex items-center gap-3">
-                  <User className="w-4 h-4 text-primary" />
-                  <div className="min-w-0">
+                <CardContent className="px-2 py-1 sm:px-4 sm:py-2 flex items-center gap-2 sm:gap-3">
+                  <User className="w-3 h-3 sm:w-4 sm:h-4 text-primary" />
+                  <div className="min-w-0 hidden sm:block">
                     <p className="text-sm font-medium">{user.name || 'User'}</p>
                     <p className="text-xs text-muted-foreground">{user.email}</p>
+                  </div>
+                  <div className="min-w-0 block sm:hidden">
+                    <p className="text-xs font-medium truncate max-w-[80px]">{user.name || user.email?.split('@')[0] || 'User'}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -58,10 +61,10 @@ const Dashboard = () => {
                 onClick={handleLogout}
                 variant="outline"
                 size="sm"
-                className="gap-2"
+                className="gap-1 sm:gap-2 px-2 sm:px-3"
               >
-                <LogOut className="w-4 h-4" />
-                Logout
+                <LogOut className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">Logout</span>
               </Button>
             </div>
           </div>

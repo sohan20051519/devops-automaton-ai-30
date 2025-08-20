@@ -4,28 +4,39 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Rocket, Github, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Rocket, Github, Loader2, CheckCircle, XCircle, Lock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 const FullDeploymentSection = () => {
   const [isDeploying, setIsDeploying] = useState(false);
   const [repoUrl, setRepoUrl] = useState('');
+  const [repoToken, setRepoToken] = useState('');
+  const [repoType, setRepoType] = useState('github');
   const [region, setRegion] = useState('us-east-1');
   const [instanceType, setInstanceType] = useState('t2.micro');
   const [deploymentStatus, setDeploymentStatus] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const detectRepoType = (url: string) => {
+    if (url.includes('github.com')) return 'github';
+    if (url.includes('gitlab.com')) return 'gitlab';
+    if (url.includes('bitbucket.org')) return 'bitbucket';
+    return 'github';
+  };
+
   const handleFullDeploy = async () => {
     if (!repoUrl) {
       toast({
         title: "Error",
-        description: "Please enter a GitHub repository URL",
+        description: "Please enter a repository URL",
         variant: "destructive",
       });
       return;
     }
 
+    const detectedType = detectRepoType(repoUrl);
+    setRepoType(detectedType);
     setIsDeploying(true);
     setDeploymentStatus(null);
 
@@ -35,6 +46,8 @@ const FullDeploymentSection = () => {
       const { data, error } = await supabase.functions.invoke('full-deploy', {
         body: {
           repo: repoUrl,
+          repo_type: detectedType,
+          repo_token: repoToken || undefined,
           region,
           instance_type: instanceType
         }
@@ -89,22 +102,39 @@ const FullDeploymentSection = () => {
               Full Stack Deployment
             </CardTitle>
             <CardDescription>
-              Enter your GitHub repository and deployment preferences below
+              Enter your repository URL and deployment preferences below
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="repo-url">GitHub Repository URL</Label>
+              <Label htmlFor="repo-url">Repository URL</Label>
               <div className="relative">
                 <Github className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <Input
                   id="repo-url"
-                  placeholder="https://github.com/username/repository"
+                  placeholder="https://github.com/username/repository (or GitLab/Bitbucket)"
                   value={repoUrl}
                   onChange={(e) => setRepoUrl(e.target.value)}
                   className="pl-10"
                 />
               </div>
+              <p className="text-xs text-muted-foreground">Supports GitHub, GitLab, and Bitbucket repositories</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="repo-token">Access Token (Optional - for private repos)</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  id="repo-token"
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxx (GitHub) or glpat-xxxxxxxxxxxx (GitLab)"
+                  value={repoToken}
+                  onChange={(e) => setRepoToken(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Required only for private repositories. Generate from your repository settings.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -180,12 +210,13 @@ const FullDeploymentSection = () => {
             <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg">
               <p className="font-medium mb-1">What happens when you deploy:</p>
               <ul className="space-y-1">
-                <li>• Downloads your GitHub repository</li>
+                <li>• Downloads your repository (public or private)</li>
+                <li>• Auto-detects language and generates Dockerfile if needed</li>
                 <li>• Builds Docker image automatically</li>
                 <li>• Pushes image to DockerHub</li>
                 <li>• Provisions AWS infrastructure</li>
-                <li>• Deploys your application</li>
-                <li>• Sets up monitoring and logs</li>
+                <li>• Deploys your application with monitoring</li>
+                <li>• Provides live logs and deployment status</li>
               </ul>
             </div>
           </CardContent>

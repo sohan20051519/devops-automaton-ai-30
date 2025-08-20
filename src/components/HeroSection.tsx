@@ -24,7 +24,7 @@ const HeroSection = () => {
         </div>
         
         <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-b from-foreground to-muted-foreground bg-clip-text text-transparent">
-          Replace Your DevOps Team
+          Supercharge Your DevOps
           <br />
           <span className="bg-gradient-primary bg-clip-text text-transparent">
             With AI Automation
@@ -32,8 +32,8 @@ const HeroSection = () => {
         </h1>
         
         <p className="text-xl md:text-2xl text-muted-foreground mb-12 max-w-4xl mx-auto leading-relaxed">
-          The world's first fully automated DevOps platform. Zero configuration CI/CD, 
-          self-healing infrastructure, and AI-powered troubleshooting that works 24/7.
+          The world's most advanced AI-powered DevOps platform. Zero configuration CI/CD, 
+          intelligent automation, and AI-assisted troubleshooting that empowers your team 24/7.
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
@@ -56,8 +56,8 @@ const HeroSection = () => {
             <div className="text-muted-foreground">Faster Deployments</div>
           </div>
           <div className="text-center">
-            <div className="text-4xl font-bold text-primary mb-2">$0</div>
-            <div className="text-muted-foreground">DevOps Hiring Costs</div>
+            <div className="text-4xl font-bold text-primary mb-2">24/7</div>
+            <div className="text-muted-foreground">AI Assistance</div>
           </div>
         </div>
       </div>
