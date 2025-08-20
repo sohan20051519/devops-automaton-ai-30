@@ -1,14 +1,17 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  GitBranch, 
-  Server, 
-  Activity, 
-  Zap, 
-  Shield, 
+import {
+  Zap,
+  Rocket,
+  Cpu,
+  BarChart3,
+  Globe,
+  GitBranch,
+  Server,
+  Activity,
   TrendingUp,
   RefreshCw,
-  Bell
-} from "lucide-react";
+  Bell,
+} from 'lucide-react';
 
 const features = [
   {
@@ -19,7 +22,7 @@ const features = [
   },
   {
     icon: Server,
-    title: "Auto Infrastructure", 
+    title: "Auto Infrastructure",
     description: "Automatically create servers, databases, containers using cloud APIs. Scale on demand.",
     color: "text-purple-500"
   },
@@ -36,10 +39,10 @@ const features = [
     color: "text-yellow-500"
   },
   {
-    icon: Shield,
-    title: "Security First",
-    description: "Auto-scan vulnerabilities in code, containers, and dependencies. Fix before deploy.",
-    color: "text-red-500"
+    icon: Zap,
+    title: "Secure by Default",
+    description: "Built-in security with automatic SSL, IAM roles, and compliance monitoring.",
+    color: "text-green-500"
   },
   {
     icon: RefreshCw,
@@ -75,7 +78,7 @@ const FeaturesSection = () => {
             Everything your DevOps team does, but automated, faster, and never sleeps.
           </p>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((feature, index) => (
             <Card key={index} className="group hover:shadow-card transition-all duration-300 hover:-translate-y-1 bg-card/50 backdrop-blur-sm border-border/50">

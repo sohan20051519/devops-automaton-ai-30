@@ -2,16 +2,16 @@ import { useState, useEffect, ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
-import { 
-  LogOut, 
-  User, 
-  Shield, 
-  Rocket, 
-  FolderOpen, 
-  Clock, 
-  BarChart3,
+import {
+  Home,
+  FolderOpen,
+  Activity,
+  FileText,
+  User,
+  LogOut,
+  Zap,
   Sun,
-  Moon
+  Moon,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -63,10 +63,10 @@ const Layout = ({ children }: LayoutProps) => {
   };
 
   const navigation = [
-    { name: 'Deploy', href: '/deploy', icon: Rocket, current: location.pathname === '/deploy' },
+    { name: 'Deploy', href: '/deploy', icon: Zap, current: location.pathname === '/deploy' },
     { name: 'Projects', href: '/projects', icon: FolderOpen, current: location.pathname === '/projects' },
-    { name: 'Usage', href: '/usage', icon: BarChart3, current: location.pathname === '/usage' },
-    { name: 'Logs', href: '/logs', icon: Clock, current: location.pathname === '/logs' },
+    { name: 'Usage', href: '/usage', icon: Activity, current: location.pathname === '/usage' },
+    { name: 'Logs', href: '/logs', icon: FileText, current: location.pathname === '/logs' },
   ];
 
   if (isLoading || !user) {
@@ -81,10 +81,10 @@ const Layout = ({ children }: LayoutProps) => {
           <div className="flex h-16 shrink-0 items-center">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
-                <Shield className="w-6 h-6 text-primary" />
+                <Zap className="w-6 h-6 text-primary" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-foreground">OneOps</h1>
+                <h1 className="text-lg font-bold text-foreground">OneOps ⚡</h1>
                 <p className="text-xs text-muted-foreground">DevOps Platform</p>
               </div>
             </div>
@@ -186,10 +186,10 @@ const Layout = ({ children }: LayoutProps) => {
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
-                <Shield className="w-5 h-5 text-primary" />
+                <Zap className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-foreground">OneOps</h1>
+                <h1 className="text-lg font-bold text-foreground">OneOps ⚡</h1>
                 <p className="text-xs text-muted-foreground">DevOps Platform</p>
               </div>
             </div>

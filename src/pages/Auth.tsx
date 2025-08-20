@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, Github } from 'lucide-react';
+import { Zap, Github } from 'lucide-react';
 
 const Auth = () => {
   const { signInWithGithub, user, isLoading } = useAuth();
@@ -34,8 +34,8 @@ const Auth = () => {
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8">
-            <Shield className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-primary">OneOps Platform</span>
+            <Zap className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium text-primary">OneOps ⚡ Platform</span>
           </div>
           
           <h1 className="text-3xl font-bold mb-2">

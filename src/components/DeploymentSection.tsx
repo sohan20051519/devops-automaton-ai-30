@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Rocket, Github, Cloud, Zap, Shield, Monitor } from "lucide-react";
+import { Rocket, Github, Cloud, Zap, Monitor } from "lucide-react";
 import { useState } from "react";
 
 const DeploymentSection = () => {
@@ -200,7 +200,7 @@ const DeploymentSection = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="text-center border-border/50 bg-card/50 hover:bg-card/80 transition-colors">
             <CardContent className="pt-6">
-              <Shield className="w-8 h-8 text-primary mx-auto mb-4" />
+              <Zap className="w-8 h-8 text-primary mx-auto mb-4" />
               <h3 className="font-semibold mb-2">Secure by Default</h3>
               <p className="text-sm text-muted-foreground">
                 All deployments include security scanning, encryption, and compliance checks

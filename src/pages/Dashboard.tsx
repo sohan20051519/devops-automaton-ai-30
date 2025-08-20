@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import FullDeploymentSection from '@/components/FullDeploymentSection';
 import DeploymentLogs from '@/components/DeploymentLogs';
 import ProjectsSection from '@/components/ProjectsSection';
-import { LogOut, User, Shield, Activity } from 'lucide-react';
+import { LogOut, User, Zap, Activity } from 'lucide-react';
 
 const Dashboard = () => {
   const { user, logout, isLoading } = useAuth();
@@ -35,10 +35,10 @@ const Dashboard = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
-                <Shield className="w-6 h-6 text-primary" />
+                <Zap className="w-6 h-6 text-primary" />
               </div>
               <div>
-                <h1 className="text-lg sm:text-xl font-bold">OneOps Dashboard</h1>
+                <h1 className="text-lg sm:text-xl font-bold">OneOps ⚡ Dashboard</h1>
                 <p className="text-xs sm:text-sm text-muted-foreground">DevOps Automation Platform</p>
               </div>
             </div>

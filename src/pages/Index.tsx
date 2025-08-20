@@ -6,7 +6,7 @@ import FeaturesSection from "@/components/FeaturesSection";
 import AIFeaturesSection from "@/components/AIFeaturesSection";
 import TechStackSection from "@/components/TechStackSection";
 import CTASection from "@/components/CTASection";
-import { Shield, ArrowRight } from "lucide-react";
+import { Zap, ArrowRight } from "lucide-react";
 
 const Index = () => {
   return (
@@ -22,7 +22,7 @@ const Index = () => {
         <section className="py-24 px-6 bg-gradient-to-b from-muted/20 to-background">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8">
-              <Shield className="w-4 h-4 text-primary" />
+              <Zap className="w-4 h-4 text-primary" />
               <span className="text-sm font-medium text-primary">Ready to Deploy?</span>
             </div>
             
@@ -40,7 +40,7 @@ const Index = () => {
             
             <Link to="/auth">
               <Button variant="hero" size="lg" className="gap-3">
-                <Shield className="w-5 h-5" />
+                <Zap className="w-5 h-5" />
                 Access Dashboard
                 <ArrowRight className="w-5 h-5" />
               </Button>
