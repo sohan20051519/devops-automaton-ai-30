@@ -14,7 +14,7 @@ const CTASection = () => {
       <div className="max-w-4xl mx-auto text-center relative z-10">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8">
           <Sparkles className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium text-primary">Ready to Replace Your DevOps Team?</span>
+          <span className="text-sm font-medium text-primary">Ready to Enhance Your DevOps?</span>
         </div>
         
         <h2 className="text-4xl md:text-6xl font-bold mb-6">
@@ -26,8 +26,8 @@ const CTASection = () => {
         </h2>
         
         <p className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto leading-relaxed">
-          Start your free trial today and experience what it's like to have a DevOps team that never sleeps, 
-          never makes mistakes, and costs a fraction of traditional hiring.
+          Experience streamlined DevOps automation that enhances your team's productivity 
+          and accelerates your deployment pipeline.
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
@@ -39,18 +39,14 @@ const CTASection = () => {
           </Link>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-          <div>
-            <div className="text-2xl font-bold text-primary mb-2">Free for 30 days</div>
-            <div className="text-muted-foreground">Full platform access</div>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-center max-w-2xl mx-auto">
           <div>
             <div className="text-2xl font-bold text-primary mb-2">Setup in 5 minutes</div>
             <div className="text-muted-foreground">Zero configuration needed</div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-primary mb-2">Cancel anytime</div>
-            <div className="text-muted-foreground">No long-term contracts</div>
+            <div className="text-2xl font-bold text-primary mb-2">Enterprise Ready</div>
+            <div className="text-muted-foreground">Secure and scalable</div>
           </div>
         </div>
       </div>

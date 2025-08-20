@@ -2,9 +2,11 @@ import { Button } from "@/components/ui/button";
 import { Zap, Menu } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user } = useAuth();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/50">
@@ -35,18 +37,29 @@ const Header = () => {
           </nav>
           
           {/* CTA Buttons */}
-          <div className="hidden md:flex items-center gap-4">
-            <Link to="/auth">
-              <Button variant="ghost">
-                Sign In
-              </Button>
-            </Link>
-            <Link to="/auth">
-              <Button variant="hero">
-                Open Dashboard
-              </Button>
-            </Link>
-          </div>
+          {!user && (
+            <div className="hidden md:flex items-center gap-4">
+              <Link to="/auth">
+                <Button variant="ghost">
+                  Sign In
+                </Button>
+              </Link>
+              <Link to="/auth">
+                <Button variant="hero">
+                  Open Dashboard
+                </Button>
+              </Link>
+            </div>
+          )}
+          {user && (
+            <div className="hidden md:flex items-center gap-4">
+              <Link to="/dashboard">
+                <Button variant="hero">
+                  Dashboard
+                </Button>
+              </Link>
+            </div>
+          )}
           
           {/* Mobile menu button */}
           <Button 
@@ -75,14 +88,23 @@ const Header = () => {
               <a href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors">
                 Pricing
               </a>
-              <div className="flex flex-col gap-2 mt-4">
-                <Link to="/auth">
-                  <Button variant="ghost">Sign In</Button>
-                </Link>
-                <Link to="/auth">
-                  <Button variant="hero">Open Dashboard</Button>
-                </Link>
-              </div>
+              {!user && (
+                <div className="flex flex-col gap-2 mt-4">
+                  <Link to="/auth">
+                    <Button variant="ghost">Sign In</Button>
+                  </Link>
+                  <Link to="/auth">
+                    <Button variant="hero">Open Dashboard</Button>
+                  </Link>
+                </div>
+              )}
+              {user && (
+                <div className="flex flex-col gap-2 mt-4">
+                  <Link to="/dashboard">
+                    <Button variant="hero">Dashboard</Button>
+                  </Link>
+                </div>
+              )}
             </nav>
           </div>
         )}
