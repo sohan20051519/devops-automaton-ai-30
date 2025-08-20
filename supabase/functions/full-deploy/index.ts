@@ -2,6 +2,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.55.0';
+import { ECSClient, RunTaskCommand } from 'https://esm.sh/@aws-sdk/client-ecs@3.0.0';
+import { EC2Client, RunInstancesCommand, DescribeInstancesCommand } from 'https://esm.sh/@aws-sdk/client-ec2@3.0.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -76,95 +78,87 @@ serve(async (req) => {
     await buildAndPushDockerImage(imageName, unzipDir);
 
     // -------- DEPLOY TO AWS --------
-    const awsApiUrl = Deno.env.get('AWS_API_URL')!;
-    const awsKey = Deno.env.get('AWS_KEY')!;
+    const awsAccessKey = Deno.env.get('AWS_ACCESS_KEY')!;
+    const awsSecretKey = Deno.env.get('AWS_SECRET_KEY')!;
 
-    if (!awsApiUrl || !awsKey) {
-      throw new Error('AWS API URL and AWS API Key must be configured');
+    if (!awsAccessKey || !awsSecretKey) {
+      throw new Error('AWS_ACCESS_KEY and AWS_SECRET_KEY must be configured');
     }
 
-    console.log(`Deploying to AWS: ${awsApiUrl}`);
+    console.log(`Deploying to AWS region: ${region}`);
     
-    const deployPayload = {
-      image: imageName, 
-      region, 
-      instance_type, 
-      app_name: repoNameFromUrl(repo), 
-      timestamp: new Date().toISOString(),
-      user_id: user.id
+    // Initialize AWS clients with proper credentials
+    const awsCredentials = {
+      accessKeyId: awsAccessKey,
+      secretAccessKey: awsSecretKey,
     };
-    
-    console.log('AWS Deploy payload:', JSON.stringify(deployPayload, null, 2));
-    
-    const deployRes = await fetch(awsApiUrl, {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${awsKey}`,
-        'x-api-key': awsKey,
-        'Content-Type': 'application/json',
-        'User-Agent': 'OneOps-Deploy-Service/1.0'
-      },
-      body: JSON.stringify(deployPayload)
+
+    const ec2Client = new EC2Client({
+      region: region,
+      credentials: awsCredentials,
     });
 
-    console.log(`AWS API Response: ${deployRes.status} ${deployRes.statusText}`);
+    console.log('Creating EC2 instance for deployment...');
     
-    let deployResult;
-    let responseText;
+    // Create EC2 instance to run the Docker container
+    const runInstancesCommand = new RunInstancesCommand({
+      ImageId: 'ami-0c02fb55956c7d316', // Amazon Linux 2 AMI (us-east-1)
+      InstanceType: instance_type as any,
+      MinCount: 1,
+      MaxCount: 1,
+      SecurityGroupIds: ['default'],
+      UserData: Buffer.from(`#!/bin/bash
+        yum update -y
+        yum install -y docker
+        service docker start
+        usermod -a -G docker ec2-user
+        docker run -d -p 80:3000 ${imageName}
+      `).toString('base64'),
+      TagSpecifications: [{
+        ResourceType: 'instance',
+        Tags: [
+          { Key: 'Name', Value: `oneops-${repoNameFromUrl(repo)}` },
+          { Key: 'Project', Value: repoNameFromUrl(repo) },
+          { Key: 'UserId', Value: user.id }
+        ]
+      }]
+    });
+
+    const runResult = await ec2Client.send(runInstancesCommand);
     
-    try {
-      responseText = await deployRes.text();
-      console.log('AWS API Raw Response:', responseText);
-      
-      if (responseText) {
-        deployResult = JSON.parse(responseText);
-      } else {
-        deployResult = { success: false, error: 'Empty response from AWS API' };
-      }
-    } catch (parseError) {
-      console.error('Failed to parse AWS response:', parseError);
-      deployResult = { 
-        success: false, 
-        error: `Invalid JSON response: ${responseText}`,
-        raw_response: responseText 
-      };
+    if (!runResult.Instances || runResult.Instances.length === 0) {
+      throw new Error('Failed to create EC2 instance');
     }
+
+    const instanceId = runResult.Instances[0].InstanceId!;
+    console.log(`Created EC2 instance: ${instanceId}`);
+
+    // Wait a moment and get instance details
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
-    if (!deployRes.ok) {
-      let errorMessage = `AWS deployment failed: ${deployRes.status} ${deployRes.statusText}`;
-      
-      if (deployRes.status === 403) {
-        errorMessage += '. Check your AWS API key configuration.';
-      } else if (deployRes.status === 401) {
-        errorMessage += '. AWS API authentication failed.';
-      } else if (deployRes.status === 404) {
-        errorMessage += '. AWS API endpoint not found.';
-      }
-      
-      if (deployResult && deployResult.message) {
-        errorMessage += ` Details: ${deployResult.message}`;
-      }
-      
-      throw new Error(errorMessage);
+    const describeCommand = new DescribeInstancesCommand({
+      InstanceIds: [instanceId]
+    });
+    
+    const describeResult = await ec2Client.send(describeCommand);
+    const instance = describeResult.Reservations?.[0]?.Instances?.[0];
+    
+    if (!instance) {
+      throw new Error('Failed to retrieve instance details');
     }
+
+    const publicDnsName = instance.PublicDnsName || `${instanceId}.${region}.compute.amazonaws.com`;
+    const actualDeploymentUrl = `http://${publicDnsName}`;
     
-    console.log('AWS deployment result:', deployResult);
-    
-    // More flexible validation - AWS might return different response formats
-    const isSuccess = deployResult?.success === true || 
-                     deployResult?.Status === 'Success' || 
-                     deployResult?.status === 'success' ||
-                     (deployResult?.instance_id && deployResult.instance_id !== '') ||
-                     (deployResult?.deployment_url && deployResult.deployment_url !== '');
-    
-    if (!isSuccess) {
-      throw new Error(`AWS deployment validation failed. Response: ${JSON.stringify(deployResult)}`);
-    }
-    
-    // Use the actual deployment URL from AWS response, fallback to generated URL
-    const actualDeploymentUrl = deployResult.deployment_url || 
-      deployResult.public_url || 
-      `https://${region}.compute.amazonaws.com/app/${repoNameFromUrl(repo)}`;
+    console.log(`AWS deployment successful. Instance: ${instanceId}, URL: ${actualDeploymentUrl}`);
+
+    const deployResult = {
+      success: true,
+      instance_id: instanceId,
+      deployment_url: actualDeploymentUrl,
+      public_dns: publicDnsName,
+      state: instance.State?.Name || 'pending'
+    };
 
     await supabase.from('projects').upsert([{ 
       user_id: user.id, 
