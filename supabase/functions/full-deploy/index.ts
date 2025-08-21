@@ -119,11 +119,17 @@ serve(async (req) => {
     console.log(`Deploying to AWS ECS Fargate in region: ${region}`);
     
     console.log('Initializing AWS signer...');
+    
+    // Create credentials object for AWSSignerV4
+    const credentials = {
+      accessKeyId: awsAccessKey,
+      secretAccessKey: awsSecretKey,
+    };
+    
     const signer = new AWSSignerV4({
       region: region,
       service: 'ecs',
-      accessKeyId: awsAccessKey,
-      secretAccessKey: awsSecretKey,
+      credentials: credentials,
     });
     console.log('AWS signer initialized successfully');
     
