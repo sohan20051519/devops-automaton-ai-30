@@ -13,7 +13,7 @@ const FullDeploymentSection = () => {
   const [repoUrl, setRepoUrl] = useState('');
   const [repoToken, setRepoToken] = useState('');
   const [repoType, setRepoType] = useState('github');
-  const [region, setRegion] = useState('us-east-1');
+  const [region, setRegion] = useState('ap-south-1');
   const [instanceType, setInstanceType] = useState('t2.micro');
   const [deploymentStatus, setDeploymentStatus] = useState<string | null>(null);
   const { toast } = useToast();
@@ -150,6 +150,7 @@ const FullDeploymentSection = () => {
                     <SelectValue placeholder="Select region" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="ap-south-1">Asia Pacific (Mumbai)</SelectItem>
                     <SelectItem value="us-east-1">US East (N. Virginia)</SelectItem>
                     <SelectItem value="us-west-2">US West (Oregon)</SelectItem>
                     <SelectItem value="eu-west-1">Europe (Ireland)</SelectItem>
