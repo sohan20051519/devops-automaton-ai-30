@@ -137,12 +137,27 @@ const ProjectsSection = () => {
 
   const handleDelete = async (projectId: string) => {
     try {
+      // Fetch project details for logging before deletion
+      const { data: proj } = await supabase.from('projects').select('repo_url').eq('id', projectId).single();
+
       const { error } = await supabase
         .from('projects')
         .delete()
         .eq('id', projectId);
 
       if (error) throw error;
+
+      // Log deletion so it shows in Deployment Logs
+      try {
+        await supabase.from('deployment_logs').insert({
+          event: 'Project Deleted',
+          repo: proj?.repo_url || 'unknown',
+          status: 'Success',
+          user_id: user?.id as any,
+        });
+      } catch (_) {
+        // ignore log failure
+      }
 
       toast({
         title: "Success",

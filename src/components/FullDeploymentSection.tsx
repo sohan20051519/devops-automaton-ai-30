@@ -150,9 +150,9 @@ const FullDeploymentSection = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background/95 to-primary/5">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 flex-1 flex flex-col">
-        <div className="text-center py-4 sm:py-6">
+    <div className="h-full flex flex-col bg-gradient-to-br from-background via-background/95 to-primary/5">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 flex-1 flex flex-col">
+        <div className="text-center py-3 sm:py-4">
           <h2 className="text-xl sm:text-2xl font-bold mb-2 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
             One-Click DevOps Deployment
           </h2>
@@ -161,9 +161,9 @@ const FullDeploymentSection = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
+        <div className={`grid grid-cols-1 gap-4 flex-1`}>
           {/* Left Panel - Configuration */}
-          <Card className="bg-card/50 backdrop-blur-sm border-border/50 h-fit">
+          <Card className={`bg-card/50 backdrop-blur-sm border-border/50 ${isDeploying ? 'h-fit' : 'h-full'}`}>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Rocket className="w-4 h-4 text-primary" />
@@ -273,7 +273,8 @@ const FullDeploymentSection = () => {
             </CardContent>
           </Card>
 
-          {/* Right Panel - Deployment Progress */}
+          {/* Deployment Progress - appears only after starting deploy */}
+          {isDeploying && (
           <Card className="bg-card/50 backdrop-blur-sm border-border/50">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -285,40 +286,29 @@ const FullDeploymentSection = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {!isDeploying && deploymentSteps.length === 0 ? (
-                <div className="flex items-center justify-center h-64 text-center">
-                  <div className="space-y-3">
-                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-                      <Rocket className="w-6 h-6 text-primary" />
-                    </div>
-                    <p className="text-muted-foreground text-sm">
-                      Configure your deployment above and click "Deploy to AWS Now" to begin
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {deploymentSteps.map((step, index) => (
-                    <div key={step.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card/30">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-500 ${
+              {(
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+                  {deploymentSteps.map((step) => (
+                    <div key={step.id} className="flex flex-col items-center gap-2 p-3 rounded-lg border bg-card/30">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-500 ${
                         step.status === 'pending' ? 'bg-muted' :
                         step.status === 'running' ? 'bg-primary animate-pulse' :
                         step.status === 'completed' ? 'bg-green-500' :
                         'bg-red-500'
                       }`}>
                         {step.status === 'running' ? (
-                          <Loader2 className="w-4 h-4 text-white animate-spin" />
+                          <Loader2 className="w-5 h-5 text-white animate-spin" />
                         ) : step.status === 'completed' ? (
-                          <CheckCircle className="w-4 h-4 text-white" />
+                          <CheckCircle className="w-5 h-5 text-white" />
                         ) : step.status === 'error' ? (
-                          <XCircle className="w-4 h-4 text-white" />
+                          <XCircle className="w-5 h-5 text-white" />
                         ) : (
-                          <step.icon className="w-4 h-4 text-muted-foreground" />
+                          <step.icon className="w-5 h-5 text-muted-foreground" />
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{step.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{step.description}</p>
+                      <div className="text-center">
+                        <p className="font-medium text-xs sm:text-sm leading-tight">{step.name}</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground leading-tight">{step.description}</p>
                       </div>
                     </div>
                   ))}
@@ -326,6 +316,7 @@ const FullDeploymentSection = () => {
               )}
             </CardContent>
           </Card>
+          )}
         </div>
       </div>
     </div>

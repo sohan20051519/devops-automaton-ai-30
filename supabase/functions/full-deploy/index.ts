@@ -102,6 +102,22 @@ serve(async (req) => {
     console.log(`AWS Secret Key length: ${awsSecretKey ? awsSecretKey.length : 0}`);
     console.log(`AWS Access Key starts with: ${awsAccessKey ? awsAccessKey.substring(0, 4) + '...' : 'N/A'}`);
     
+    // Debug: Check for hidden characters
+    if (awsAccessKey) {
+      console.log(`Access Key bytes: ${JSON.stringify([...awsAccessKey].map(c => c.charCodeAt(0)))}`);
+      console.log(`Access Key has carriage return: ${awsAccessKey.includes('\r')}`);
+      console.log(`Access Key has newline: ${awsAccessKey.includes('\n')}`);
+      console.log(`Access Key has tab: ${awsAccessKey.includes('\t')}`);
+    }
+    
+    if (awsSecretKey) {
+      console.log(`Secret Key first 4 chars: ${awsSecretKey.substring(0, 4)}...`);
+      console.log(`Secret Key last 4 chars: ...${awsSecretKey.substring(awsSecretKey.length - 4)}`);
+      console.log(`Secret Key has carriage return: ${awsSecretKey.includes('\r')}`);
+      console.log(`Secret Key has newline: ${awsSecretKey.includes('\n')}`);
+      console.log(`Secret Key has tab: ${awsSecretKey.includes('\t')}`);
+    }
+    
     if (!awsAccessKey || !awsSecretKey) {
       throw new Error('AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be configured');
     }
@@ -413,14 +429,17 @@ function createCustomAWSSigner(accessKeyId: string, secretAccessKey: string, reg
       // Get request body
       const body = await request.text();
       
-      // Create canonical request
-      const canonicalHeaders = Array.from(headers.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, v]) => `${k.toLowerCase()}:${v.trim()}`)
-        .join('\n');
+      // Create canonical request with proper header handling
+      const headerEntries = Array.from(headers.entries())
+        .filter(([key]) => key.toLowerCase() !== 'authorization') // Remove any existing auth header
+        .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()));
       
-      const signedHeaders = Array.from(headers.keys())
-        .map(k => k.toLowerCase())
+      const canonicalHeaders = headerEntries
+        .map(([k, v]) => `${k.toLowerCase()}:${v}`)
+        .join('\n') + '\n';
+      
+      const signedHeaders = headerEntries
+        .map(([k]) => k.toLowerCase())
         .sort()
         .join(';');
       
@@ -431,7 +450,7 @@ function createCustomAWSSigner(accessKeyId: string, secretAccessKey: string, reg
         method,
         url.pathname,
         url.search ? url.search.substring(1) : '',
-        canonicalHeaders + '\n',
+        canonicalHeaders,
         signedHeaders,
         bodyHash
       ].join('\n');
@@ -456,7 +475,9 @@ function createCustomAWSSigner(accessKeyId: string, secretAccessKey: string, reg
       
       const finalHeaders: Record<string, string> = {};
       headers.forEach((value, key) => {
-        finalHeaders[key] = value;
+        if (key.toLowerCase() !== 'authorization') { // Don't include existing auth header
+          finalHeaders[key] = value;
+        }
       });
       finalHeaders['Authorization'] = authorization;
       
@@ -500,7 +521,91 @@ async function calculateSignature(secretKey: string, dateStamp: string, region: 
 
 // -------- AWS ECS FUNCTIONS --------
 
+async function ensureECSServiceLinkedRole(accessKey: string, secretKey: string, region: string): Promise<void> {
+  console.log('Ensuring ECS service-linked role exists...');
+  
+  // IAM is a global service, so we use us-east-1 region for signing
+  const iamRegion = 'us-east-1';
+  const endpoint = `https://iam.amazonaws.com/`;
+  const timestamp = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
+  const dateStamp = timestamp.substr(0, 8);
+  
+  const body = 'Action=CreateServiceLinkedRole&AWSServiceName=ecs.amazonaws.com&Version=2010-05-08';
+  
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Host': 'iam.amazonaws.com',
+    'X-Amz-Date': timestamp,
+  };
+  
+  const canonicalHeaders = Object.entries(headers)
+    .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(([k, v]) => `${k.toLowerCase()}:${v}`)
+    .join('\n') + '\n';
+  
+  const signedHeaders = Object.keys(headers)
+    .map(k => k.toLowerCase())
+    .sort()
+    .join(';');
+  
+  const bodyHash = await sha256(body);
+  
+  const canonicalRequest = [
+    'POST',
+    '/',
+    '',
+    canonicalHeaders,
+    signedHeaders,
+    bodyHash
+  ].join('\n');
+  
+  const algorithm = 'AWS4-HMAC-SHA256';
+  const credentialScope = `${dateStamp}/${iamRegion}/iam/aws4_request`;
+  const requestHash = await sha256(canonicalRequest);
+  
+  const stringToSign = [
+    algorithm,
+    timestamp,
+    credentialScope,
+    requestHash
+  ].join('\n');
+  
+  const signature = await calculateSignature(secretKey, dateStamp, iamRegion, 'iam', stringToSign);
+  
+  const authorization = `${algorithm} Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Authorization': authorization,
+      },
+      body: body,
+    });
+
+    if (response.ok) {
+      console.log('ECS service-linked role created successfully');
+    } else {
+      const error = await response.text();
+      // If the role already exists, that's fine
+      if (error.includes('EntityAlreadyExists')) {
+        console.log('ECS service-linked role already exists');
+      } else {
+        console.warn(`Warning: Could not create ECS service-linked role: ${response.status} ${error}`);
+        // Don't throw error here - continue with cluster creation anyway
+      }
+    }
+  } catch (error) {
+    console.warn(`Warning: Error creating ECS service-linked role: ${error}`);
+    // Don't throw error here - continue with cluster creation anyway
+  }
+}
+
 async function ensureECSCluster(signer: any, accessKey: string, secretKey: string, region: string, clusterName: string): Promise<void> {
+  // First ensure the ECS service-linked role exists
+  await ensureECSServiceLinkedRole(accessKey, secretKey, region);
+  
   // First check if cluster exists
   const describeEndpoint = `https://ecs.${region}.amazonaws.com/`;
   
@@ -508,26 +613,58 @@ async function ensureECSCluster(signer: any, accessKey: string, secretKey: strin
     clusters: [clusterName]
   });
 
-  const describeRequest = new Request(describeEndpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.DescribeClusters',
-    },
-    body: describeBody,
-  });
-
-  const { headers: describeHeaders } = await signer.sign('ecs', describeRequest, {
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey,
-  });
+  // Use direct signing like the test function
+  const timestamp = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
+  const dateStamp = timestamp.substr(0, 8);
+  
+  const describeHeaders = {
+    'Content-Type': 'application/x-amz-json-1.1',
+    'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.DescribeClusters',
+    'Host': `ecs.${region}.amazonaws.com`,
+    'X-Amz-Date': timestamp,
+  };
+  
+  const describeCanonicalHeaders = Object.entries(describeHeaders)
+    .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(([k, v]) => `${k.toLowerCase()}:${v}`)
+    .join('\n') + '\n';
+  
+  const describeSignedHeaders = Object.keys(describeHeaders)
+    .map(k => k.toLowerCase())
+    .sort()
+    .join(';');
+  
+  const describeBodyHash = await sha256(describeBody);
+  
+  const describeCanonicalRequest = [
+    'POST',
+    '/',
+    '',
+    describeCanonicalHeaders,
+    describeSignedHeaders,
+    describeBodyHash
+  ].join('\n');
+  
+  const algorithm = 'AWS4-HMAC-SHA256';
+  const describeCredentialScope = `${dateStamp}/${region}/ecs/aws4_request`;
+  const describeRequestHash = await sha256(describeCanonicalRequest);
+  
+  const describeStringToSign = [
+    algorithm,
+    timestamp,
+    describeCredentialScope,
+    describeRequestHash
+  ].join('\n');
+  
+  const describeSignature = await calculateSignature(secretKey, dateStamp, region, 'ecs', describeStringToSign);
+  
+  const describeAuthorization = `${algorithm} Credential=${accessKey}/${describeCredentialScope}, SignedHeaders=${describeSignedHeaders}, Signature=${describeSignature}`;
 
   const describeResponse = await fetch(describeEndpoint, {
     method: 'POST',
     headers: {
       ...describeHeaders,
-      'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.DescribeClusters',
+      'Authorization': describeAuthorization,
     },
     body: describeBody,
   });
@@ -545,37 +682,59 @@ async function ensureECSCluster(signer: any, accessKey: string, secretKey: strin
   
   const body = JSON.stringify({
     clusterName: clusterName,
-    capacityProviders: ['FARGATE'],
-    defaultCapacityProviderStrategy: [{
-      capacityProvider: 'FARGATE',
-      weight: 1
-    }],
     tags: [
       { key: 'Project', value: 'OneOps' },
       { key: 'Environment', value: 'Production' }
     ]
   });
 
-  const request = new Request(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.CreateCluster',
-    },
-    body: body,
-  });
-
-  const { headers } = await signer.sign('ecs', request, {
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey,
-  });
+  const headers = {
+    'Content-Type': 'application/x-amz-json-1.1',
+    'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.CreateCluster',
+    'Host': `ecs.${region}.amazonaws.com`,
+    'X-Amz-Date': timestamp,
+  };
+  
+  const canonicalHeaders = Object.entries(headers)
+    .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(([k, v]) => `${k.toLowerCase()}:${v}`)
+    .join('\n') + '\n';
+  
+  const signedHeaders = Object.keys(headers)
+    .map(k => k.toLowerCase())
+    .sort()
+    .join(';');
+  
+  const bodyHash = await sha256(body);
+  
+  const canonicalRequest = [
+    'POST',
+    '/',
+    '',
+    canonicalHeaders,
+    signedHeaders,
+    bodyHash
+  ].join('\n');
+  
+  const credentialScope = `${dateStamp}/${region}/ecs/aws4_request`;
+  const requestHash = await sha256(canonicalRequest);
+  
+  const stringToSign = [
+    algorithm,
+    timestamp,
+    credentialScope,
+    requestHash
+  ].join('\n');
+  
+  const signature = await calculateSignature(secretKey, dateStamp, region, 'ecs', stringToSign);
+  
+  const authorization = `${algorithm} Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       ...headers,
-      'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': 'AmazonEC2ContainerServiceV20141113.CreateCluster',
+      'Authorization': authorization,
     },
     body: body,
   });
@@ -717,27 +876,59 @@ async function createApplicationLoadBalancer(
 }> {
   const elbEndpoint = `https://elasticloadbalancing.${region}.amazonaws.com/`;
   
-  // Create target group first
+  // Create target group first using direct signing
   const tgBody = `Action=CreateTargetGroup&Name=oneops-${appName}-tg&Protocol=HTTP&Port=3000&VpcId=${vpcId}&TargetType=ip&HealthCheckPath=/&HealthCheckProtocol=HTTP&Version=2015-12-01`;
   
-  const tgRequest = new Request(elbEndpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: tgBody,
-  });
-
-  const { headers: tgHeaders } = await signer.sign('elasticloadbalancing', tgRequest, {
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey,
-  });
+  const timestamp = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
+  const dateStamp = timestamp.substr(0, 8);
+  
+  const tgHeaders = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Host': `elasticloadbalancing.${region}.amazonaws.com`,
+    'X-Amz-Date': timestamp,
+  };
+  
+  const tgCanonicalHeaders = Object.entries(tgHeaders)
+    .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(([k, v]) => `${k.toLowerCase()}:${v}`)
+    .join('\n') + '\n';
+  
+  const tgSignedHeaders = Object.keys(tgHeaders)
+    .map(k => k.toLowerCase())
+    .sort()
+    .join(';');
+  
+  const tgBodyHash = await sha256(tgBody);
+  
+  const tgCanonicalRequest = [
+    'POST',
+    '/',
+    '',
+    tgCanonicalHeaders,
+    tgSignedHeaders,
+    tgBodyHash
+  ].join('\n');
+  
+  const algorithm = 'AWS4-HMAC-SHA256';
+  const tgCredentialScope = `${dateStamp}/${region}/elasticloadbalancing/aws4_request`;
+  const tgRequestHash = await sha256(tgCanonicalRequest);
+  
+  const tgStringToSign = [
+    algorithm,
+    timestamp,
+    tgCredentialScope,
+    tgRequestHash
+  ].join('\n');
+  
+  const tgSignature = await calculateSignature(secretKey, dateStamp, region, 'elasticloadbalancing', tgStringToSign);
+  
+  const tgAuthorization = `${algorithm} Credential=${accessKey}/${tgCredentialScope}, SignedHeaders=${tgSignedHeaders}, Signature=${tgSignature}`;
 
   const tgResponse = await fetch(elbEndpoint, {
     method: 'POST',
     headers: {
       ...tgHeaders,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': tgAuthorization,
     },
     body: tgBody,
   });
@@ -756,24 +947,52 @@ async function createApplicationLoadBalancer(
   
   const albBody = `Action=CreateLoadBalancer&Name=oneops-${appName}-alb&${subnetParams}&SecurityGroups.member.1=${securityGroupId}&Scheme=internet-facing&Type=application&Version=2015-12-01`;
   
-  const albRequest = new Request(elbEndpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: albBody,
-  });
-
-  const { headers: albHeaders } = await signer.sign('elasticloadbalancing', albRequest, {
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey,
-  });
+  const albHeaders = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Host': `elasticloadbalancing.${region}.amazonaws.com`,
+    'X-Amz-Date': timestamp,
+  };
+  
+  const albCanonicalHeaders = Object.entries(albHeaders)
+    .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(([k, v]) => `${k.toLowerCase()}:${v}`)
+    .join('\n') + '\n';
+  
+  const albSignedHeaders = Object.keys(albHeaders)
+    .map(k => k.toLowerCase())
+    .sort()
+    .join(';');
+  
+  const albBodyHash = await sha256(albBody);
+  
+  const albCanonicalRequest = [
+    'POST',
+    '/',
+    '',
+    albCanonicalHeaders,
+    albSignedHeaders,
+    albBodyHash
+  ].join('\n');
+  
+  const albCredentialScope = `${dateStamp}/${region}/elasticloadbalancing/aws4_request`;
+  const albRequestHash = await sha256(albCanonicalRequest);
+  
+  const albStringToSign = [
+    algorithm,
+    timestamp,
+    albCredentialScope,
+    albRequestHash
+  ].join('\n');
+  
+  const albSignature = await calculateSignature(secretKey, dateStamp, region, 'elasticloadbalancing', albStringToSign);
+  
+  const albAuthorization = `${algorithm} Credential=${accessKey}/${albCredentialScope}, SignedHeaders=${albSignedHeaders}, Signature=${albSignature}`;
 
   const albResponse = await fetch(elbEndpoint, {
     method: 'POST',
     headers: {
       ...albHeaders,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': albAuthorization,
     },
     body: albBody,
   });
@@ -793,24 +1012,52 @@ async function createApplicationLoadBalancer(
   // Create listener
   const listenerBody = `Action=CreateListener&LoadBalancerArn=${encodeURIComponent(albArn)}&Protocol=HTTP&Port=80&DefaultActions.member.1.Type=forward&DefaultActions.member.1.TargetGroupArn=${encodeURIComponent(targetGroupArn)}&Version=2015-12-01`;
   
-  const listenerRequest = new Request(elbEndpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: listenerBody,
-  });
-
-  const { headers: listenerHeaders } = await signer.sign('elasticloadbalancing', listenerRequest, {
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey,
-  });
+  const listenerHeaders = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Host': `elasticloadbalancing.${region}.amazonaws.com`,
+    'X-Amz-Date': timestamp,
+  };
+  
+  const listenerCanonicalHeaders = Object.entries(listenerHeaders)
+    .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(([k, v]) => `${k.toLowerCase()}:${v}`)
+    .join('\n') + '\n';
+  
+  const listenerSignedHeaders = Object.keys(listenerHeaders)
+    .map(k => k.toLowerCase())
+    .sort()
+    .join(';');
+  
+  const listenerBodyHash = await sha256(listenerBody);
+  
+  const listenerCanonicalRequest = [
+    'POST',
+    '/',
+    '',
+    listenerCanonicalHeaders,
+    listenerSignedHeaders,
+    listenerBodyHash
+  ].join('\n');
+  
+  const listenerCredentialScope = `${dateStamp}/${region}/elasticloadbalancing/aws4_request`;
+  const listenerRequestHash = await sha256(listenerCanonicalRequest);
+  
+  const listenerStringToSign = [
+    algorithm,
+    timestamp,
+    listenerCredentialScope,
+    listenerRequestHash
+  ].join('\n');
+  
+  const listenerSignature = await calculateSignature(secretKey, dateStamp, region, 'elasticloadbalancing', listenerStringToSign);
+  
+  const listenerAuthorization = `${algorithm} Credential=${accessKey}/${listenerCredentialScope}, SignedHeaders=${listenerSignedHeaders}, Signature=${listenerSignature}`;
 
   const listenerResponse = await fetch(elbEndpoint, {
     method: 'POST',
     headers: {
       ...listenerHeaders,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': listenerAuthorization,
     },
     body: listenerBody,
   });
@@ -1050,76 +1297,92 @@ async function getAccountId(signer: any, accessKey: string, secretKey: string, r
   console.log(`Secret key length: ${secretKey.length}`);
   console.log(`Region: ${region}`);
   
-  // Check system time and ensure proper time synchronization
-  const currentTime = new Date();
-  const utcTime = new Date(currentTime.getTime() + currentTime.getTimezoneOffset() * 60000);
-  console.log(`System time (UTC): ${utcTime.toISOString()}`);
-  console.log(`System time (local): ${currentTime.toISOString()}`);
+  // Clean credentials
+  const cleanAccessKey = accessKey.trim();
+  const cleanSecretKey = secretKey.trim();
   
-  // Clear any potential cached AWS credentials
-  console.log('Clearing potential credential cache...');
+  console.log(`Clean Access Key length: ${cleanAccessKey.length}`);
+  console.log(`Clean Secret Key length: ${cleanSecretKey.length}`);
   
-  // Check for whitespace or encoding issues
-  const trimmedAccessKey = accessKey.trim();
-  const trimmedSecretKey = secretKey.trim();
-  
-  console.log(`Access key after trim: ${trimmedAccessKey === accessKey ? 'no change' : 'whitespace removed'}`);
-  console.log(`Secret key after trim: ${trimmedSecretKey === secretKey ? 'no change' : 'whitespace removed'}`);
-  console.log(`Access key has non-ASCII chars: ${/[^\x00-\x7F]/.test(accessKey)}`);
-  console.log(`Secret key has non-ASCII chars: ${/[^\x00-\x7F]/.test(secretKey)}`);
-  
-  // Use trimmed credentials
-  const cleanAccessKey = trimmedAccessKey;
-  const cleanSecretKey = trimmedSecretKey;
-  
-  // Additional validation with more flexible format checking
-  if (!cleanAccessKey.match(/^AKIA[A-Z0-9]{16}$/) && !cleanAccessKey.match(/^[A-Z0-9]{20}$/)) {
-    console.error(`Invalid access key format. Got: ${cleanAccessKey.substring(0, 4)}...`);
-    throw new Error('Invalid AWS Access Key format');
-  }
-  
-  if (cleanSecretKey.length !== 40) {
-    console.error(`Invalid secret key length. Expected 40 chars, got: ${cleanSecretKey.length}`);
-    throw new Error('Invalid AWS Secret Key length');
-  }
-  
-  // Ensure we're using the exact region passed in
-  console.log(`Using AWS region: ${region} (from deployment config)`);
-  console.log(`Endpoint will be: https://sts.${region}.amazonaws.com/`);
-  
-  const request = new Request(endpoint, {
-    method: 'POST',
-    headers: {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
+    const dateStamp = timestamp.substr(0, 8);
+    
+    const body = 'Action=GetCallerIdentity&Version=2011-06-15';
+    const bodyHash = await sha256(body);
+    
+    const headers = {
       'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'Action=GetCallerIdentity&Version=2011-06-15',
-  });
+      'Host': `sts.${region}.amazonaws.com`,
+      'X-Amz-Date': timestamp,
+    };
+    
+    const canonicalHeaders = Object.entries(headers)
+      .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .map(([k, v]) => `${k.toLowerCase()}:${v}`)
+      .join('\n') + '\n';
+    
+    const signedHeaders = Object.keys(headers)
+      .map(k => k.toLowerCase())
+      .sort()
+      .join(';');
+    
+    const canonicalRequest = [
+      'POST',
+      '/',
+      '',
+      canonicalHeaders,
+      signedHeaders,
+      bodyHash
+    ].join('\n');
+    
+    const algorithm = 'AWS4-HMAC-SHA256';
+    const credentialScope = `${dateStamp}/${region}/sts/aws4_request`;
+    const requestHash = await sha256(canonicalRequest);
+    
+    const stringToSign = [
+      algorithm,
+      timestamp,
+      credentialScope,
+      requestHash
+    ].join('\n');
+    
+    const signature = await calculateSignature(cleanSecretKey, dateStamp, region, 'sts', stringToSign);
+    
+    const authorization = `${algorithm} Credential=${cleanAccessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Authorization': authorization,
+      },
+      body: body,
+    });
 
-  const { headers } = await signer.sign('sts', request, {
-    accessKeyId: cleanAccessKey,
-    secretAccessKey: cleanSecretKey,
-  });
+    console.log(`STS Response status: ${response.status} ${response.statusText}`);
+    
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`STS Error details: ${errorBody}`);
+      
+      // Provide more helpful error messages
+      if (response.status === 403) {
+        if (errorBody.includes('SignatureDoesNotMatch')) {
+          throw new Error('AWS credentials are invalid or corrupted. Please check your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.');
+        } else if (errorBody.includes('AccessDenied')) {
+          throw new Error('AWS credentials do not have sufficient permissions. Please ensure your IAM user has STS:GetCallerIdentity permission.');
+        }
+      }
+      
+      throw new Error(`Failed to get account ID: ${response.status} - ${errorBody}`);
+    }
 
-  console.log('Signed headers:', Object.keys(headers));
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      ...headers,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'Action=GetCallerIdentity&Version=2011-06-15',
-  });
-
-  console.log(`STS Response status: ${response.status} ${response.statusText}`);
-  
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error(`STS Error details: ${errorBody}`);
-    throw new Error(`Failed to get account ID: ${response.status} - ${errorBody}`);
+    const text = await response.text();
+    const match = text.match(/<Account>(\d+)<\/Account>/);
+    return match ? match[1] : 'unknown';
+  } catch (error) {
+    console.error('Error in getAccountId:', error);
+    throw error;
   }
-
-  const text = await response.text();
-  const match = text.match(/<Account>(\d+)<\/Account>/);
-  return match ? match[1] : 'unknown';
 }

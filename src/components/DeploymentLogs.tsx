@@ -90,7 +90,7 @@ const DeploymentLogs = () => {
   };
 
   return (
-    <Card className="bg-card/50 backdrop-blur-sm border-border/50">
+    <Card className="h-full flex flex-col bg-card/50 backdrop-blur-sm border-border/50">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -113,8 +113,8 @@ const DeploymentLogs = () => {
           </Button>
         </div>
       </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-96">
+      <CardContent className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
           {logs.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
               No deployment logs found. Start a deployment to see logs here.
