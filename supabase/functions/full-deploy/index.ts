@@ -93,17 +93,17 @@ serve(async (req) => {
     await prepareImage(imageName, unzipDir);
 
     // -------- DEPLOY TO AWS --------
-    const awsAccessKey = Deno.env.get('AWS_ACCESS_KEY')!;
-    const awsSecretKey = Deno.env.get('AWS_SECRET_KEY')!;
+    const awsAccessKey = Deno.env.get('AWS_ACCESS_KEY_ID')!;
+    const awsSecretKey = Deno.env.get('AWS_SECRET_ACCESS_KEY')!;
     
     console.log(`AWS Access Key: ${awsAccessKey ? 'Found' : 'MISSING'}`);
     console.log(`AWS Secret Key: ${awsSecretKey ? 'Found' : 'MISSING'}`);
     console.log(`AWS Access Key length: ${awsAccessKey ? awsAccessKey.length : 0}`);
     console.log(`AWS Secret Key length: ${awsSecretKey ? awsSecretKey.length : 0}`);
     console.log(`AWS Access Key starts with: ${awsAccessKey ? awsAccessKey.substring(0, 4) + '...' : 'N/A'}`);
-
+    
     if (!awsAccessKey || !awsSecretKey) {
-      throw new Error('AWS_ACCESS_KEY and AWS_SECRET_KEY must be configured');
+      throw new Error('AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be configured');
     }
 
     // Validate credential format
