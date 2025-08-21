@@ -1050,6 +1050,30 @@ async function getAccountId(signer: any, accessKey: string, secretKey: string, r
   console.log(`Secret key length: ${secretKey.length}`);
   console.log(`Region: ${region}`);
   
+  // Check for whitespace or encoding issues
+  const trimmedAccessKey = accessKey.trim();
+  const trimmedSecretKey = secretKey.trim();
+  
+  console.log(`Access key after trim: ${trimmedAccessKey === accessKey ? 'no change' : 'whitespace removed'}`);
+  console.log(`Secret key after trim: ${trimmedSecretKey === secretKey ? 'no change' : 'whitespace removed'}`);
+  console.log(`Access key has non-ASCII chars: ${/[^\x00-\x7F]/.test(accessKey)}`);
+  console.log(`Secret key has non-ASCII chars: ${/[^\x00-\x7F]/.test(secretKey)}`);
+  
+  // Use trimmed credentials
+  const cleanAccessKey = trimmedAccessKey;
+  const cleanSecretKey = trimmedSecretKey;
+  
+  // Additional validation
+  if (!cleanAccessKey.match(/^AKIA[A-Z0-9]{16}$/)) {
+    console.error(`Invalid access key format. Expected AKIA followed by 16 alphanumeric chars, got: ${cleanAccessKey}`);
+    throw new Error('Invalid AWS Access Key format');
+  }
+  
+  if (!cleanSecretKey.match(/^[A-Za-z0-9/+=]{40}$/)) {
+    console.error(`Invalid secret key format. Expected 40 base64-like chars, got length: ${cleanSecretKey.length}`);
+    throw new Error('Invalid AWS Secret Key format');
+  }
+  
   const request = new Request(endpoint, {
     method: 'POST',
     headers: {
@@ -1059,8 +1083,8 @@ async function getAccountId(signer: any, accessKey: string, secretKey: string, r
   });
 
   const { headers } = await signer.sign('sts', request, {
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey,
+    accessKeyId: cleanAccessKey,
+    secretAccessKey: cleanSecretKey,
   });
 
   console.log('Signed headers:', Object.keys(headers));
