@@ -430,7 +430,7 @@ function createCustomAWSSigner(accessKeyId: string, secretAccessKey: string, reg
       const canonicalRequest = [
         method,
         url.pathname,
-        url.search.substr(1),
+        url.search ? url.search.substring(1) : '',
         canonicalHeaders + '\n',
         signedHeaders,
         bodyHash
@@ -448,11 +448,11 @@ function createCustomAWSSigner(accessKeyId: string, secretAccessKey: string, reg
         requestHash
       ].join('\n');
       
-      // Calculate signature
-      const signature = await calculateSignature(secretAccessKey, dateStamp, region, service, stringToSign);
+      // Calculate signature  
+      const signature = await calculateSignature(options?.secretAccessKey || secretAccessKey, dateStamp, region, service, stringToSign);
       
       // Create authorization header
-      const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+      const authorization = `${algorithm} Credential=${options?.accessKeyId || accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
       
       const finalHeaders: Record<string, string> = {};
       headers.forEach((value, key) => {
