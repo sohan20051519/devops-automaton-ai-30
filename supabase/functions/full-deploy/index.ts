@@ -107,15 +107,25 @@ serve(async (req) => {
       throw new Error('AWS_ACCESS_KEY and AWS_SECRET_KEY must be configured');
     }
 
+    // Validate credential format
+    if (!awsAccessKey.startsWith('AKIA') || awsAccessKey.length !== 20) {
+      throw new Error('Invalid AWS Access Key format. Must start with AKIA and be 20 characters long');
+    }
+    
+    if (awsSecretKey.length !== 40) {
+      throw new Error('Invalid AWS Secret Key format. Must be 40 characters long');
+    }
+
     console.log(`Deploying to AWS ECS Fargate in region: ${region}`);
     
-    // Initialize AWS signer with explicit credentials
+    // Set AWS environment variables for the signer
+    Deno.env.set('AWS_ACCESS_KEY_ID', awsAccessKey);
+    Deno.env.set('AWS_SECRET_ACCESS_KEY', awsSecretKey);
+    
     console.log('Initializing AWS signer...');
     const signer = new AWSSignerV4({
-      region,
+      region: region,
       service: 'ecs',
-      accessKeyId: awsAccessKey,
-      secretAccessKey: awsSecretKey,
     });
     console.log('AWS signer initialized successfully');
     
