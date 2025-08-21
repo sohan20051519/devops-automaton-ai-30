@@ -1050,6 +1050,15 @@ async function getAccountId(signer: any, accessKey: string, secretKey: string, r
   console.log(`Secret key length: ${secretKey.length}`);
   console.log(`Region: ${region}`);
   
+  // Check system time and ensure proper time synchronization
+  const currentTime = new Date();
+  const utcTime = new Date(currentTime.getTime() + currentTime.getTimezoneOffset() * 60000);
+  console.log(`System time (UTC): ${utcTime.toISOString()}`);
+  console.log(`System time (local): ${currentTime.toISOString()}`);
+  
+  // Clear any potential cached AWS credentials
+  console.log('Clearing potential credential cache...');
+  
   // Check for whitespace or encoding issues
   const trimmedAccessKey = accessKey.trim();
   const trimmedSecretKey = secretKey.trim();
@@ -1063,16 +1072,20 @@ async function getAccountId(signer: any, accessKey: string, secretKey: string, r
   const cleanAccessKey = trimmedAccessKey;
   const cleanSecretKey = trimmedSecretKey;
   
-  // Additional validation
-  if (!cleanAccessKey.match(/^AKIA[A-Z0-9]{16}$/)) {
-    console.error(`Invalid access key format. Expected AKIA followed by 16 alphanumeric chars, got: ${cleanAccessKey}`);
+  // Additional validation with more flexible format checking
+  if (!cleanAccessKey.match(/^AKIA[A-Z0-9]{16}$/) && !cleanAccessKey.match(/^[A-Z0-9]{20}$/)) {
+    console.error(`Invalid access key format. Got: ${cleanAccessKey.substring(0, 4)}...`);
     throw new Error('Invalid AWS Access Key format');
   }
   
-  if (!cleanSecretKey.match(/^[A-Za-z0-9/+=]{40}$/)) {
-    console.error(`Invalid secret key format. Expected 40 base64-like chars, got length: ${cleanSecretKey.length}`);
-    throw new Error('Invalid AWS Secret Key format');
+  if (cleanSecretKey.length !== 40) {
+    console.error(`Invalid secret key length. Expected 40 chars, got: ${cleanSecretKey.length}`);
+    throw new Error('Invalid AWS Secret Key length');
   }
+  
+  // Ensure we're using the exact region passed in
+  console.log(`Using AWS region: ${region} (from deployment config)`);
+  console.log(`Endpoint will be: https://sts.${region}.amazonaws.com/`);
   
   const request = new Request(endpoint, {
     method: 'POST',

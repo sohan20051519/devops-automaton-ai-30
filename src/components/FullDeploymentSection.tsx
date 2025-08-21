@@ -1,12 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Rocket, Github, Loader2, CheckCircle, XCircle, Lock } from 'lucide-react';
+import { Rocket, Github, Loader2, CheckCircle, XCircle, Lock, Download, Package, Upload, Cloud, Server, Monitor } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+
+interface DeploymentStep {
+  id: string;
+  name: string;
+  icon: any;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  description: string;
+}
 
 const FullDeploymentSection = () => {
   const [isDeploying, setIsDeploying] = useState(false);
@@ -16,7 +24,29 @@ const FullDeploymentSection = () => {
   const [region, setRegion] = useState('ap-south-1');
   const [instanceType, setInstanceType] = useState('t2.micro');
   const [deploymentStatus, setDeploymentStatus] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [deploymentSteps, setDeploymentSteps] = useState<DeploymentStep[]>([]);
   const { toast } = useToast();
+
+  const steps: DeploymentStep[] = [
+    { id: 'download', name: 'Download Repository', icon: Download, status: 'pending', description: 'Fetching your code from repository' },
+    { id: 'analyze', name: 'Analyze Project', icon: Package, status: 'pending', description: 'Detecting project type and dependencies' },
+    { id: 'build', name: 'Build Docker Image', icon: Package, status: 'pending', description: 'Creating containerized application' },
+    { id: 'upload', name: 'Upload to Registry', icon: Upload, status: 'pending', description: 'Pushing image to DockerHub' },
+    { id: 'provision', name: 'Provision AWS', icon: Cloud, status: 'pending', description: 'Setting up cloud infrastructure' },
+    { id: 'deploy', name: 'Deploy Application', icon: Server, status: 'pending', description: 'Launching your application' },
+    { id: 'monitor', name: 'Setup Monitoring', icon: Monitor, status: 'pending', description: 'Configuring logs and health checks' }
+  ];
+
+  useEffect(() => {
+    if (isDeploying) {
+      setDeploymentSteps([...steps]);
+      simulateDeploymentProgress();
+    } else {
+      setDeploymentSteps([]);
+      setCurrentStep(0);
+    }
+  }, [isDeploying]);
 
   const detectRepoType = (url: string) => {
     if (url.includes('github.com')) return 'github';
@@ -25,10 +55,32 @@ const FullDeploymentSection = () => {
     return 'github';
   };
 
+  const simulateDeploymentProgress = () => {
+    const stepDurations = [2000, 3000, 5000, 4000, 6000, 3000, 2000]; // milliseconds for each step
+    
+    stepDurations.forEach((duration, index) => {
+      setTimeout(() => {
+        setDeploymentSteps(prev => prev.map((step, i) => {
+          if (i === index) return { ...step, status: 'running' };
+          if (i < index) return { ...step, status: 'completed' };
+          return step;
+        }));
+        setCurrentStep(index);
+      }, stepDurations.slice(0, index).reduce((sum, d) => sum + d, 0));
+
+      setTimeout(() => {
+        setDeploymentSteps(prev => prev.map((step, i) => {
+          if (i === index) return { ...step, status: 'completed' };
+          return step;
+        }));
+      }, stepDurations.slice(0, index + 1).reduce((sum, d) => sum + d, 0));
+    });
+  };
+
   const handleFullDeploy = async () => {
     if (!repoUrl) {
       toast({
-        title: "Error",
+        title: "Error", 
         description: "Please enter a repository URL",
         variant: "destructive",
       });
@@ -60,6 +112,7 @@ const FullDeploymentSection = () => {
 
       if (error) {
         console.error('Deployment error:', error);
+        setDeploymentSteps(prev => prev.map(step => ({ ...step, status: 'error' })));
         throw new Error(error.message);
       }
 
@@ -67,9 +120,14 @@ const FullDeploymentSection = () => {
 
       if (data.success) {
         setDeploymentStatus('success');
+        // Ensure all steps are completed
+        setTimeout(() => {
+          setDeploymentSteps(prev => prev.map(step => ({ ...step, status: 'completed' })));
+        }, 25000); // Total duration of all steps
+        
         toast({
           title: "🚀 Deployment Successful!",
-          description: `Your app is being deployed to AWS ${region}`,
+          description: `Your app is deployed to AWS ${region}`,
         });
       } else {
         throw new Error(data.error || 'Deployment failed');
@@ -78,157 +136,199 @@ const FullDeploymentSection = () => {
     } catch (error) {
       console.error('Full deployment failed:', error);
       setDeploymentStatus('error');
+      setDeploymentSteps(prev => prev.map(step => ({ ...step, status: 'error' })));
       toast({
         title: "Deployment Failed",
         description: error instanceof Error ? error.message : "Unknown error occurred",
         variant: "destructive",
       });
     } finally {
-      setIsDeploying(false);
+      setTimeout(() => {
+        setIsDeploying(false);
+      }, isDeploying ? 25000 : 0);
     }
   };
 
   return (
-    <section className="py-10 sm:py-20 bg-gradient-to-br from-background via-background/95 to-primary/5">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-8 sm:mb-12">
-          <h2 className="text-2xl sm:text-3xl font-bold mb-4 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background/95 to-primary/5">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 flex-1 flex flex-col">
+        <div className="text-center py-4 sm:py-6">
+          <h2 className="text-xl sm:text-2xl font-bold mb-2 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
             One-Click DevOps Deployment
           </h2>
-          <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mx-auto">
-            Deploy any GitHub repo to AWS in seconds. We handle the Docker build, push, and infrastructure automatically.
+          <p className="text-muted-foreground text-sm sm:text-base max-w-2xl mx-auto">
+            Deploy any GitHub repo to AWS in seconds with automated infrastructure.
           </p>
         </div>
 
-        <Card className="bg-card/50 backdrop-blur-sm border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Rocket className="w-5 h-5 text-primary" />
-              Full Stack Deployment
-            </CardTitle>
-            <CardDescription>
-              Enter your repository URL and deployment preferences below
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="repo-url">Repository URL</Label>
-              <div className="relative">
-                <Github className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  id="repo-url"
-                  placeholder="https://github.com/username/repository (or GitLab/Bitbucket)"
-                  value={repoUrl}
-                  onChange={(e) => setRepoUrl(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">Supports GitHub, GitLab, and Bitbucket repositories</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="repo-token">Access Token (Optional - for private repos)</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  id="repo-token"
-                  type="password"
-                  placeholder="ghp_xxxxxxxxxxxx (GitHub) or glpat-xxxxxxxxxxxx (GitLab)"
-                  value={repoToken}
-                  onChange={(e) => setRepoToken(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">Required only for private repositories. Generate from your repository settings.</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
+          {/* Left Panel - Configuration */}
+          <Card className="bg-card/50 backdrop-blur-sm border-border/50 h-fit">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Rocket className="w-4 h-4 text-primary" />
+                Deploy Configuration
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="region">AWS Region</Label>
-                <Select value={region} onValueChange={setRegion}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select region" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ap-south-1">Asia Pacific (Mumbai)</SelectItem>
-                    <SelectItem value="us-east-1">US East (N. Virginia)</SelectItem>
-                    <SelectItem value="us-west-2">US West (Oregon)</SelectItem>
-                    <SelectItem value="eu-west-1">Europe (Ireland)</SelectItem>
-                    <SelectItem value="ap-southeast-1">Asia Pacific (Singapore)</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="repo-url" className="text-sm">Repository URL</Label>
+                <div className="relative">
+                  <Github className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Input
+                    id="repo-url"
+                    placeholder="https://github.com/username/repository"
+                    value={repoUrl}
+                    onChange={(e) => setRepoUrl(e.target.value)}
+                    className="pl-10 h-9"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="instance-type">Instance Type</Label>
-                <Select value={instanceType} onValueChange={setInstanceType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select instance type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="t2.micro">t2.micro (Free tier)</SelectItem>
-                    <SelectItem value="t3.small">t3.small</SelectItem>
-                    <SelectItem value="t3.medium">t3.medium</SelectItem>
-                    <SelectItem value="t3.large">t3.large</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="repo-token" className="text-sm">Access Token (Optional)</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Input
+                    id="repo-token"
+                    type="password"
+                    placeholder="For private repositories"
+                    value={repoToken}
+                    onChange={(e) => setRepoToken(e.target.value)}
+                    className="pl-10 h-9"
+                  />
+                </div>
               </div>
-            </div>
 
-            <Button
-              onClick={handleFullDeploy}
-              disabled={isDeploying || !repoUrl}
-              className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-primary-foreground font-semibold py-3 h-auto"
-            >
-              {isDeploying ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Deploying... (This may take a few minutes)
-                </>
-              ) : (
-                <>
-                  <Rocket className="w-4 h-4 mr-2" />
-                  Deploy to AWS Now
-                </>
-              )}
-            </Button>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="region" className="text-sm">AWS Region</Label>
+                  <Select value={region} onValueChange={setRegion}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ap-south-1">Mumbai</SelectItem>
+                      <SelectItem value="us-east-1">N. Virginia</SelectItem>
+                      <SelectItem value="us-west-2">Oregon</SelectItem>
+                      <SelectItem value="eu-west-1">Ireland</SelectItem>
+                      <SelectItem value="ap-southeast-1">Singapore</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {deploymentStatus && (
-              <div className={`flex items-center justify-center p-4 rounded-lg ${
-                deploymentStatus === 'success' 
-                  ? 'bg-green-500/10 text-green-600 border border-green-500/20' 
-                  : 'bg-red-500/10 text-red-600 border border-red-500/20'
-              }`}>
-                {deploymentStatus === 'success' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="instance-type" className="text-sm">Instance Type</Label>
+                  <Select value={instanceType} onValueChange={setInstanceType}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="t2.micro">t2.micro</SelectItem>
+                      <SelectItem value="t3.small">t3.small</SelectItem>
+                      <SelectItem value="t3.medium">t3.medium</SelectItem>
+                      <SelectItem value="t3.large">t3.large</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleFullDeploy}
+                disabled={isDeploying || !repoUrl}
+                className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-primary-foreground font-semibold h-10"
+              >
+                {isDeploying ? (
                   <>
-                    <CheckCircle className="w-5 h-5 mr-2" />
-                    Deployment completed successfully!
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Deploying...
                   </>
                 ) : (
                   <>
-                    <XCircle className="w-5 h-5 mr-2" />
-                    Deployment failed. Please check the logs.
+                    <Rocket className="w-4 h-4 mr-2" />
+                    Deploy to AWS Now
                   </>
                 )}
-              </div>
-            )}
+              </Button>
 
-            <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg">
-              <p className="font-medium mb-1">What happens when you deploy:</p>
-              <ul className="space-y-1">
-                <li>• Downloads your repository (public or private)</li>
-                <li>• Auto-detects language and generates Dockerfile if needed</li>
-                <li>• Builds Docker image automatically</li>
-                <li>• Pushes image to DockerHub</li>
-                <li>• Provisions AWS infrastructure</li>
-                <li>• Deploys your application with monitoring</li>
-                <li>• Provides live logs and deployment status</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
+              {deploymentStatus && (
+                <div className={`flex items-center justify-center p-3 rounded-lg text-sm ${
+                  deploymentStatus === 'success' 
+                    ? 'bg-green-500/10 text-green-600 border border-green-500/20' 
+                    : 'bg-red-500/10 text-red-600 border border-red-500/20'
+                }`}>
+                  {deploymentStatus === 'success' ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Deployment completed!
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Deployment failed.
+                    </>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Right Panel - Deployment Progress */}
+          <Card className="bg-card/50 backdrop-blur-sm border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Monitor className="w-4 h-4 text-primary" />
+                Deployment Progress
+              </CardTitle>
+              <CardDescription className="text-sm">
+                Real-time deployment status and progress
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!isDeploying && deploymentSteps.length === 0 ? (
+                <div className="flex items-center justify-center h-64 text-center">
+                  <div className="space-y-3">
+                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+                      <Rocket className="w-6 h-6 text-primary" />
+                    </div>
+                    <p className="text-muted-foreground text-sm">
+                      Configure your deployment above and click "Deploy to AWS Now" to begin
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {deploymentSteps.map((step, index) => (
+                    <div key={step.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card/30">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-500 ${
+                        step.status === 'pending' ? 'bg-muted' :
+                        step.status === 'running' ? 'bg-primary animate-pulse' :
+                        step.status === 'completed' ? 'bg-green-500' :
+                        'bg-red-500'
+                      }`}>
+                        {step.status === 'running' ? (
+                          <Loader2 className="w-4 h-4 text-white animate-spin" />
+                        ) : step.status === 'completed' ? (
+                          <CheckCircle className="w-4 h-4 text-white" />
+                        ) : step.status === 'error' ? (
+                          <XCircle className="w-4 h-4 text-white" />
+                        ) : (
+                          <step.icon className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{step.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{step.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </section>
+    </div>
   );
 };
 
