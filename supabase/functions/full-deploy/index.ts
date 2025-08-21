@@ -2,7 +2,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.55.0';
-import { AWSSignerV4 } from "https://deno.land/x/aws_sign_v4@1.0.2/mod.ts";
 import { JSZip } from "https://deno.land/x/jszip@0.11.0/mod.ts";
 
 const corsHeaders = {
@@ -120,17 +119,9 @@ serve(async (req) => {
     
     console.log('Initializing AWS signer...');
     
-    // Create credentials object for AWSSignerV4
-    const credentials = {
-      accessKeyId: awsAccessKey,
-      secretAccessKey: awsSecretKey,
-    };
-    
-    const signer = new AWSSignerV4({
-      region: region,
-      service: 'ecs',
-      credentials: credentials,
-    });
+    // Create a custom AWS signer instead of using the problematic AWSSignerV4
+    console.log('Creating custom AWS signer with region:', region);
+    const signer = createCustomAWSSigner(awsAccessKey, awsSecretKey, region);
     console.log('AWS signer initialized successfully');
     
     const accountId = await getAccountId(signer, awsAccessKey, awsSecretKey, region);
@@ -403,9 +394,113 @@ function repoNameFromUrl(repoUrl: string): string {
   return name.replace('.git', '').toLowerCase();
 }
 
+// -------- CUSTOM AWS SIGNER --------
+
+function createCustomAWSSigner(accessKeyId: string, secretAccessKey: string, region: string) {
+  return {
+    sign: async (service: string, request: Request, options?: any) => {
+      const url = new URL(request.url);
+      const method = request.method;
+      const headers = new Headers(request.headers);
+      
+      // Add required AWS headers
+      const timestamp = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
+      const dateStamp = timestamp.substr(0, 8);
+      
+      headers.set('Host', url.host);
+      headers.set('X-Amz-Date', timestamp);
+      
+      // Get request body
+      const body = await request.text();
+      
+      // Create canonical request
+      const canonicalHeaders = Array.from(headers.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k.toLowerCase()}:${v.trim()}`)
+        .join('\n');
+      
+      const signedHeaders = Array.from(headers.keys())
+        .map(k => k.toLowerCase())
+        .sort()
+        .join(';');
+      
+      // Hash the request body
+      const bodyHash = await sha256(body || '');
+      
+      const canonicalRequest = [
+        method,
+        url.pathname,
+        url.search.substr(1),
+        canonicalHeaders + '\n',
+        signedHeaders,
+        bodyHash
+      ].join('\n');
+      
+      // Create string to sign
+      const algorithm = 'AWS4-HMAC-SHA256';
+      const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+      const requestHash = await sha256(canonicalRequest);
+      
+      const stringToSign = [
+        algorithm,
+        timestamp,
+        credentialScope,
+        requestHash
+      ].join('\n');
+      
+      // Calculate signature
+      const signature = await calculateSignature(secretAccessKey, dateStamp, region, service, stringToSign);
+      
+      // Create authorization header
+      const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+      
+      const finalHeaders: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        finalHeaders[key] = value;
+      });
+      finalHeaders['Authorization'] = authorization;
+      
+      return { headers: finalHeaders };
+    }
+  };
+}
+
+async function sha256(message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hmacSha256(key: Uint8Array, message: string): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const keyObject = await crypto.subtle.importKey(
+    'raw',
+    key,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', keyObject, encoder.encode(message));
+  return new Uint8Array(signature);
+}
+
+async function calculateSignature(secretKey: string, dateStamp: string, region: string, service: string, stringToSign: string): Promise<string> {
+  const encoder = new TextEncoder();
+  
+  const kDate = await hmacSha256(encoder.encode(`AWS4${secretKey}`), dateStamp);
+  const kRegion = await hmacSha256(kDate, region);
+  const kService = await hmacSha256(kRegion, service);
+  const kSigning = await hmacSha256(kService, 'aws4_request');
+  
+  const signature = await hmacSha256(kSigning, stringToSign);
+  return Array.from(signature).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // -------- AWS ECS FUNCTIONS --------
 
-async function ensureECSCluster(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string, clusterName: string): Promise<void> {
+async function ensureECSCluster(signer: any, accessKey: string, secretKey: string, region: string, clusterName: string): Promise<void> {
   // First check if cluster exists
   const describeEndpoint = `https://ecs.${region}.amazonaws.com/`;
   
@@ -493,7 +588,7 @@ async function ensureECSCluster(signer: AWSSignerV4, accessKey: string, secretKe
   console.log(`ECS cluster ${clusterName} created successfully`);
 }
 
-async function getNetworkingResources(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string): Promise<{
+async function getNetworkingResources(signer: any, accessKey: string, secretKey: string, region: string): Promise<{
   subnets: string[],
   securityGroupId: string,
   vpcId: string
@@ -607,7 +702,7 @@ async function getNetworkingResources(signer: AWSSignerV4, accessKey: string, se
 }
 
 async function createApplicationLoadBalancer(
-  signer: AWSSignerV4, 
+  signer: any, 
   accessKey: string, 
   secretKey: string, 
   region: string, 
@@ -734,7 +829,7 @@ async function createApplicationLoadBalancer(
 }
 
 async function registerTaskDefinition(
-  signer: AWSSignerV4, 
+  signer: any, 
   accessKey: string, 
   secretKey: string, 
   region: string, 
@@ -823,7 +918,7 @@ async function registerTaskDefinition(
 }
 
 async function createECSService(
-  signer: AWSSignerV4,
+  signer: any,
   accessKey: string,
   secretKey: string,
   region: string,
@@ -905,7 +1000,7 @@ async function createECSService(
   return result.service.serviceArn;
 }
 
-async function createLogGroup(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string, logGroupName: string): Promise<void> {
+async function createLogGroup(signer: any, accessKey: string, secretKey: string, region: string, logGroupName: string): Promise<void> {
   const endpoint = `https://logs.${region}.amazonaws.com/`;
   
   const body = JSON.stringify({
@@ -946,7 +1041,7 @@ async function createLogGroup(signer: AWSSignerV4, accessKey: string, secretKey:
   }
 }
 
-async function getAccountId(signer: AWSSignerV4, accessKey: string, secretKey: string, region: string): Promise<string> {
+async function getAccountId(signer: any, accessKey: string, secretKey: string, region: string): Promise<string> {
   // Use STS to get account ID
   const endpoint = `https://sts.${region}.amazonaws.com/`;
   
