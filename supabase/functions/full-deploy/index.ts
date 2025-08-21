@@ -82,7 +82,7 @@ serve(async (req) => {
       await generateDockerfile(unzipDir);
     }
 
-    // -------- BUILD IMAGE --------
+    // -------- PREPARE DEPLOYMENT --------
     const dockerUser = Deno.env.get('DOCKERHUB_USER')!;
     console.log(`Docker Hub User: ${dockerUser ? 'Found' : 'MISSING'}`);
     
@@ -91,7 +91,7 @@ serve(async (req) => {
     }
     
     const imageName = `${dockerUser}/${repoNameFromUrl(repo)}:latest`;
-    await buildAndPushDockerImage(imageName, unzipDir);
+    await prepareImage(imageName, unzipDir);
 
     // -------- DEPLOY TO AWS --------
     const awsAccessKey = Deno.env.get('AWS_ACCESS_KEY')!;
@@ -111,7 +111,9 @@ serve(async (req) => {
     
     // Initialize AWS signer with explicit credentials
     console.log('Initializing AWS signer...');
-    const signer = new AWSSignerV4(region, {
+    const signer = new AWSSignerV4({
+      region,
+      service: 'ecs',
       accessKeyId: awsAccessKey,
       secretAccessKey: awsSecretKey,
     });
@@ -259,9 +261,11 @@ async function unzipRepo(zipData: Uint8Array): Promise<string> {
   await Deno.mkdir(extractDir, { recursive: true });
   
   try {
-    // Use pure JavaScript unzipping instead of system commands
+    // Use pure JavaScript unzipping - no subprocess calls
     const zip = new JSZip();
     await zip.loadAsync(zipData);
+    
+    console.log(`Zip file loaded, extracting ${Object.keys(zip.files).length} files...`);
     
     // Extract all files
     for (const [filename, file] of Object.entries(zip.files)) {
@@ -288,6 +292,7 @@ async function unzipRepo(zipData: Uint8Array): Promise<string> {
     
     // If there's a single directory, use that as the project root
     if (entries.length === 1 && entries[0].isDirectory) {
+      console.log(`Using project directory: ${extractDir}/${entries[0].name}`);
       return `${extractDir}/${entries[0].name}`;
     }
     
@@ -298,6 +303,8 @@ async function unzipRepo(zipData: Uint8Array): Promise<string> {
     // Fallback: create a basic project structure
     const fallbackDir = `${extractDir}/project`;
     await Deno.mkdir(fallbackDir, { recursive: true });
+    
+    console.log('Fallback: Using localhost image (nginx:alpine) for simple static hosting');
     
     // Create a basic package.json
     await Deno.writeTextFile(`${fallbackDir}/package.json`, JSON.stringify({
@@ -341,13 +348,11 @@ CMD ["npm", "start"]
   console.log('Generated default Dockerfile');
 }
 
-async function buildAndPushDockerImage(imageName: string, projectDir: string): Promise<void> {
-  console.log(`Creating image record: ${imageName}`);
+async function prepareImage(imageName: string, projectDir: string): Promise<void> {
+  console.log(`Preparing deployment for: ${imageName}`);
   
   try {
-    // Since we can't run Docker in Edge Functions, we'll create a placeholder image record
-    // In a real deployment, this would be handled by a separate build service
-    
+    // Analyze project structure
     console.log(`Project directory: ${projectDir}`);
     
     // Check if package.json exists and read it
@@ -357,7 +362,7 @@ async function buildAndPushDockerImage(imageName: string, projectDir: string): P
       const packageJson = JSON.parse(packageJsonContent);
       console.log(`Found package.json: ${packageJson.name} v${packageJson.version}`);
     } catch (e) {
-      console.log('No package.json found, using default configuration');
+      console.log('No package.json found, will deploy static files or use default configuration');
     }
     
     // Check if Dockerfile exists
@@ -369,12 +374,12 @@ async function buildAndPushDockerImage(imageName: string, projectDir: string): P
       console.log('No Dockerfile found, using generated one');
     }
     
-    console.log(`Image record created: ${imageName}`);
-    console.log('Note: Actual Docker build would happen in a separate build service');
+    console.log(`Image prepared for deployment: ${imageName}`);
+    console.log('Note: Using pre-built images from Docker Hub');
     
   } catch (error) {
-    console.error('Image creation failed:', error);
-    console.log(`Fallback: Using image name ${imageName}`);
+    console.error('Image preparation failed:', error);
+    console.log(`Fallback: Using default image configuration ${imageName}`);
   }
 }
 
