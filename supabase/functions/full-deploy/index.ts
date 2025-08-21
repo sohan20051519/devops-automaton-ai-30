@@ -1045,6 +1045,11 @@ async function getAccountId(signer: any, accessKey: string, secretKey: string, r
   // Use STS to get account ID
   const endpoint = `https://sts.${region}.amazonaws.com/`;
   
+  console.log(`Testing AWS credentials with STS endpoint: ${endpoint}`);
+  console.log(`Access key starts with: ${accessKey.substring(0, 8)}...`);
+  console.log(`Secret key length: ${secretKey.length}`);
+  console.log(`Region: ${region}`);
+  
   const request = new Request(endpoint, {
     method: 'POST',
     headers: {
@@ -1058,6 +1063,8 @@ async function getAccountId(signer: any, accessKey: string, secretKey: string, r
     secretAccessKey: secretKey,
   });
 
+  console.log('Signed headers:', Object.keys(headers));
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -1067,8 +1074,12 @@ async function getAccountId(signer: any, accessKey: string, secretKey: string, r
     body: 'Action=GetCallerIdentity&Version=2011-06-15',
   });
 
+  console.log(`STS Response status: ${response.status} ${response.statusText}`);
+  
   if (!response.ok) {
-    throw new Error(`Failed to get account ID: ${response.status}`);
+    const errorBody = await response.text();
+    console.error(`STS Error details: ${errorBody}`);
+    throw new Error(`Failed to get account ID: ${response.status} - ${errorBody}`);
   }
 
   const text = await response.text();
