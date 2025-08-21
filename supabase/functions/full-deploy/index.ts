@@ -118,14 +118,12 @@ serve(async (req) => {
 
     console.log(`Deploying to AWS ECS Fargate in region: ${region}`);
     
-    // Set AWS environment variables for the signer
-    Deno.env.set('AWS_ACCESS_KEY_ID', awsAccessKey);
-    Deno.env.set('AWS_SECRET_ACCESS_KEY', awsSecretKey);
-    
     console.log('Initializing AWS signer...');
     const signer = new AWSSignerV4({
       region: region,
       service: 'ecs',
+      accessKeyId: awsAccessKey,
+      secretAccessKey: awsSecretKey,
     });
     console.log('AWS signer initialized successfully');
     
